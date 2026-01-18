@@ -1,0 +1,24 @@
+# Dependencies (will be installed in container)
+node_modules/
+client/node_modules/
+
+# Development files
+.git/
+.gitignore
+*.md
+.env*
+
+# Local data (will use volumes in production)
+data.json
+uploads/
+
+# Build artifacts (will be built in container)
+dist/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

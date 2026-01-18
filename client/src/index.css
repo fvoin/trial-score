@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Source Sans 3', sans-serif;
+  background-color: #0F0F1A;
+  color: #fff;
+  margin: 0;
+  padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Oswald', sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1A1A2E;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #FF6B35;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ff8555;
+}
+
+/* Score button styles */
+.score-btn {
+  @apply w-14 h-14 rounded-lg font-display text-2xl font-bold transition-all duration-150;
+  @apply hover:scale-110 active:scale-95;
+}
+
+.score-btn-0 {
+  @apply bg-trials-success text-trials-darker;
+}
+
+.score-btn-1 {
+  @apply bg-emerald-400 text-trials-darker;
+}
+
+.score-btn-2 {
+  @apply bg-trials-warning text-trials-darker;
+}
+
+.score-btn-3 {
+  @apply bg-orange-500 text-white;
+}
+
+.score-btn-5 {
+  @apply bg-trials-danger text-white;
+}
+
+.score-btn-dnf {
+  @apply bg-gray-600 text-white text-base;
+}
