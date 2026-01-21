@@ -171,14 +171,19 @@ export default function Manager() {
     }
   }
 
+  const [savingSettings, setSavingSettings] = useState(false)
+
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
-    if (!settings) return
+    if (!settings || savingSettings) return
+    setSavingSettings(true)
     try {
       await updateSettings(settings)
       setShowSettings(false)
     } catch {
       setError('Failed to save settings')
+    } finally {
+      setSavingSettings(false)
     }
   }
 
@@ -665,9 +670,10 @@ export default function Manager() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-trials-orange text-trials-darker font-bold rounded-lg hover:bg-trials-orange/90 transition-colors"
+                  disabled={savingSettings}
+                  className="flex-1 py-3 bg-trials-orange text-trials-darker font-bold rounded-lg hover:bg-trials-orange/90 transition-colors disabled:opacity-50"
                 >
-                  Save Settings
+                  {savingSettings ? 'Saving...' : 'Save Settings'}
                 </button>
               </div>
             </form>
