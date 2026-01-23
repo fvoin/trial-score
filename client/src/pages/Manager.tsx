@@ -9,12 +9,17 @@ import {
   updateSettings,
   getScores,
   getLeaderboard,
+  getAuthRequired,
+  verifyPin,
+  getExportJsonUrl,
+  getExportCsvUrl,
   type Competitor,
   type Settings,
   type Score,
   type LeaderboardEntry
 } from '../api'
 import { UserIcon, SettingsIcon, PlusIcon, CameraIcon, UploadIcon, TrashIcon, HistoryIcon } from '../components/Icons'
+import PinModal, { getPinCookie } from '../components/PinModal'
 
 const CLASSES = [
   { value: 'kids', label: 'Kids' },
@@ -52,6 +57,9 @@ export default function Manager() {
   const [error, setError] = useState('')
   const [classFilter, setClassFilter] = useState<ClassFilter>('all')
 
+  // Auth state
+  const [needsAuth, setNeedsAuth] = useState(false)
+
   // Log data
   const [allScores, setAllScores] = useState<Score[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
@@ -66,8 +74,42 @@ export default function Manager() {
   const [photoFile, setPhotoFile] = useState<File | null>(null)
 
   useEffect(() => {
-    loadData()
+    checkAuth()
   }, [])
+
+  async function checkAuth() {
+    try {
+      const required = await getAuthRequired()
+      if (!required.manager) {
+        // No PIN required
+        loadData()
+        return
+      }
+
+      // Check cookie
+      const savedPin = getPinCookie('manager')
+      if (savedPin) {
+        const result = await verifyPin(savedPin, 'manager')
+        if (result.valid) {
+          loadData()
+          return
+        }
+      }
+
+      // Need to show PIN modal
+      setNeedsAuth(true)
+      setLoading(false)
+    } catch {
+      // If auth check fails, allow access (for backwards compatibility)
+      loadData()
+    }
+  }
+
+  function handleAuthSuccess() {
+    setNeedsAuth(false)
+    setLoading(true)
+    loadData()
+  }
 
   async function loadData() {
     try {
@@ -218,6 +260,11 @@ export default function Manager() {
       }
       return { ...entry, rank: currentRank }
     })
+  }
+
+  // Show PIN modal if needed
+  if (needsAuth) {
+    return <PinModal role="manager" onSuccess={handleAuthSuccess} />
   }
 
   if (loading) {
@@ -659,6 +706,27 @@ export default function Manager() {
                 />
                 <span>Enable email backup for each score</span>
               </label>
+
+              {/* Export buttons */}
+              <div className="border-t border-gray-700 pt-4 mt-4">
+                <label className="block text-sm text-gray-400 mb-2">Export Data</label>
+                <div className="flex gap-2">
+                  <a
+                    href={getExportJsonUrl()}
+                    download
+                    className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-center text-sm"
+                  >
+                    📦 JSON (Full Backup)
+                  </a>
+                  <a
+                    href={getExportCsvUrl()}
+                    download
+                    className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-center text-sm"
+                  >
+                    📊 CSV (Standings)
+                  </a>
+                </div>
+              </div>
 
               <div className="flex gap-3 pt-4">
                 <button

@@ -8,11 +8,14 @@ import {
   createScore,
   updateScore,
   deleteScore,
+  getAuthRequired,
+  verifyPin,
   type Competitor,
   type Section,
   type Score
 } from '../api'
 import { UserIcon, ClipboardIcon, HistoryIcon, EditIcon, TrashIcon } from '../components/Icons'
+import PinModal, { getPinCookie } from '../components/PinModal'
 
 const STORAGE_KEY = 'trial_score_judge_section'
 
@@ -43,6 +46,9 @@ export default function Judge() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   
+  // Auth state
+  const [needsAuth, setNeedsAuth] = useState(false)
+
   // Scoring modal state
   const [scoringCompetitor, setScoringCompetitor] = useState<Competitor | null>(null)
   const [nextLap, setNextLap] = useState(1)
@@ -58,8 +64,38 @@ export default function Judge() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    loadInitialData()
+    checkAuth()
   }, [])
+
+  async function checkAuth() {
+    try {
+      const required = await getAuthRequired()
+      if (!required.judge) {
+        loadInitialData()
+        return
+      }
+
+      const savedPin = getPinCookie('judge')
+      if (savedPin) {
+        const result = await verifyPin(savedPin, 'judge')
+        if (result.valid) {
+          loadInitialData()
+          return
+        }
+      }
+
+      setNeedsAuth(true)
+      setLoading(false)
+    } catch {
+      loadInitialData()
+    }
+  }
+
+  function handleAuthSuccess() {
+    setNeedsAuth(false)
+    setLoading(true)
+    loadInitialData()
+  }
 
   useEffect(() => {
     if (selectedSection) {
@@ -208,6 +244,11 @@ export default function Judge() {
     } catch {
       setError('Failed to delete score')
     }
+  }
+
+  // Show PIN modal if needed
+  if (needsAuth) {
+    return <PinModal role="judge" onSuccess={handleAuthSuccess} />
   }
 
   if (loading) {

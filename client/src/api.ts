@@ -183,3 +183,28 @@ export async function updateSettings(data: Partial<Settings>): Promise<Settings>
   if (!res.ok) throw new Error('Failed to update settings');
   return res.json();
 }
+
+// Auth
+export async function verifyPin(pin: string, role: 'manager' | 'judge'): Promise<{ valid: boolean }> {
+  const res = await fetch(`${API_BASE}/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin, role })
+  });
+  return res.json();
+}
+
+export async function getAuthRequired(): Promise<{ manager: boolean; judge: boolean }> {
+  const res = await fetch(`${API_BASE}/auth/required`);
+  if (!res.ok) throw new Error('Failed to check auth');
+  return res.json();
+}
+
+// Export
+export function getExportJsonUrl(): string {
+  return `${API_BASE}/export/json`;
+}
+
+export function getExportCsvUrl(): string {
+  return `${API_BASE}/export/csv`;
+}
