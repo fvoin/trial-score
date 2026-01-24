@@ -1,5 +1,5 @@
 import express from 'express';
-import { getCompetitors, getScores, getLeaderboard, getSettings, getSections } from '../db.js';
+import { getCompetitors, getScores, getLeaderboard, getSettings, getSections, importData } from '../db.js';
 
 const router = express.Router();
 
@@ -88,6 +88,36 @@ router.get('/csv', (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="trial-standings-${Date.now()}.csv"`);
     res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST import data from JSON
+router.post('/json', (req, res) => {
+  try {
+    const { settings, competitors, scores } = req.body;
+    
+    if (!competitors || !scores) {
+      return res.status(400).json({ error: 'Invalid import data: missing competitors or scores' });
+    }
+    
+    const result = importData({ settings, competitors, scores });
+    
+    // Broadcast update to all clients
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('competitor_update');
+      io.emit('score_update');
+    }
+    
+    res.json({ 
+      success: true, 
+      imported: {
+        competitors: result.competitors,
+        scores: result.scores
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

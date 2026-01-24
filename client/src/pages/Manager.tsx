@@ -13,6 +13,7 @@ import {
   verifyPin,
   getExportJsonUrl,
   getExportCsvUrl,
+  importJson,
   type Competitor,
   type Settings,
   type Score,
@@ -214,6 +215,32 @@ export default function Manager() {
   }
 
   const [savingSettings, setSavingSettings] = useState(false)
+  const [importing, setImporting] = useState(false)
+
+  async function handleImportJson(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    setImporting(true)
+    setError('')
+    
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const result = await importJson(data)
+      alert(`Imported ${result.imported.competitors} competitors and ${result.imported.scores} scores`)
+      // Reload data
+      loadData()
+      setShowSettings(false)
+    } catch (err) {
+      console.error('Import error:', err)
+      setError(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setImporting(false)
+      // Reset file input
+      e.target.value = ''
+    }
+  }
 
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
@@ -714,25 +741,35 @@ export default function Manager() {
                 <span>Enable email backup for each score</span>
               </label>
 
-              {/* Export buttons */}
+              {/* Export/Import buttons */}
               <div className="border-t border-gray-700 pt-4 mt-4">
-                <label className="block text-sm text-gray-400 mb-2">Export Data</label>
-                <div className="flex gap-2">
+                <label className="block text-sm text-gray-400 mb-2">Data Backup</label>
+                <div className="flex gap-2 mb-2">
                   <a
                     href={getExportJsonUrl()}
                     download
                     className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-center text-sm"
                   >
-                    📦 JSON (Full Backup)
+                    📦 Export JSON
                   </a>
                   <a
                     href={getExportCsvUrl()}
                     download
                     className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-center text-sm"
                   >
-                    📊 CSV (Standings)
+                    📊 Export CSV
                   </a>
                 </div>
+                <label className={`block w-full py-2 bg-trials-accent/20 border border-trials-accent rounded-lg hover:bg-trials-accent/30 transition-colors text-center text-sm cursor-pointer ${importing ? 'opacity-50' : ''}`}>
+                  {importing ? '⏳ Importing...' : '📥 Import JSON Backup'}
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={handleImportJson}
+                    disabled={importing}
+                    className="hidden"
+                  />
+                </label>
               </div>
 
               <div className="flex gap-3 pt-4">

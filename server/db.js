@@ -337,4 +337,35 @@ export function updateSettings(data) {
   return db.settings;
 }
 
+// Import data from JSON backup
+export function importData({ settings, competitors, scores }) {
+  // Update settings if provided
+  if (settings) {
+    db.settings = {
+      ...db.settings,
+      event_name: settings.event_name || db.settings.event_name,
+      event_date: settings.event_date || db.settings.event_date,
+      email_backup_address: settings.email_backup_address,
+      email_backup_enabled: settings.email_backup_enabled
+    };
+  }
+  
+  // Replace competitors
+  if (competitors && Array.isArray(competitors)) {
+    db.competitors = competitors;
+  }
+  
+  // Replace scores
+  if (scores && Array.isArray(scores)) {
+    db.scores = scores;
+  }
+  
+  saveDb(db);
+  
+  return {
+    competitors: db.competitors.length,
+    scores: db.scores.length
+  };
+}
+
 export default db;

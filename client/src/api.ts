@@ -208,3 +208,16 @@ export function getExportJsonUrl(): string {
 export function getExportCsvUrl(): string {
   return `${API_BASE}/export/csv`;
 }
+
+export async function importJson(data: unknown): Promise<{ success: boolean; imported: { competitors: number; scores: number } }> {
+  const res = await fetch(`${API_BASE}/export/json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || 'Import failed');
+  }
+  return res.json();
+}
