@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 import { initDb } from './db.js';
@@ -31,8 +32,9 @@ initDb();
 app.use(cors());
 app.use(express.json());
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Static files - use volume path if available
+const uploadsPath = fs.existsSync('/app/data') ? '/app/data/uploads' : path.join(__dirname, '../uploads');
+app.use('/uploads', express.static(uploadsPath));
 
 // Make io available in routes
 app.set('io', io);

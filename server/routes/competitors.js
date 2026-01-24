@@ -17,11 +17,13 @@ import { broadcastCompetitorUpdate } from '../socket.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../../uploads');
+// Use /app/data/uploads for Railway volume, otherwise local uploads
+const baseDir = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, '../..');
+const uploadsDir = path.join(baseDir, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
+console.log('Uploads directory:', uploadsDir);
 
 // Configure multer for photo uploads (memory storage for processing)
 const upload = multer({

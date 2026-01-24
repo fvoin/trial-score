@@ -3,7 +3,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '../data.json');
+
+// Use /app/data for Railway volume, otherwise local data.json
+const dataDir = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, '..');
+const dbPath = path.join(dataDir, 'data.json');
+console.log('Database path:', dbPath);
 
 // Default database structure
 const defaultDb = {
