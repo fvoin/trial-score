@@ -217,12 +217,19 @@ export default function Manager() {
 
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
-    if (!settings || savingSettings) return
+    if (!settings) return
+    if (savingSettings) {
+      console.log('Already saving, skipping...')
+      return
+    }
     setSavingSettings(true)
+    setError('')
     try {
-      await updateSettings(settings)
+      const updated = await updateSettings(settings)
+      setSettings(updated)
       setShowSettings(false)
-    } catch {
+    } catch (err) {
+      console.error('Settings save error:', err)
       setError('Failed to save settings')
     } finally {
       setSavingSettings(false)

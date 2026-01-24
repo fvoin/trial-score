@@ -46,6 +46,7 @@ async function processAndSaveImage(buffer) {
   const filepath = path.join(uploadsDir, filename);
   
   await sharp(buffer)
+    .rotate() // Auto-orient based on EXIF data
     .resize(300, 300, {
       fit: 'cover',
       position: 'center'
