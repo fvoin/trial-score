@@ -19,7 +19,7 @@ import {
   type Score,
   type LeaderboardEntry
 } from '../api'
-import { UserIcon, SettingsIcon, PlusIcon, CameraIcon, UploadIcon, TrashIcon, HistoryIcon } from '../components/Icons'
+import { UserIcon, SettingsIcon, PlusIcon, CameraIcon, UploadIcon, TrashIcon, HistoryIcon, FileJsonIcon, FileSpreadsheetIcon, DownloadIcon, LoaderIcon } from '../components/Icons'
 import PinModal, { getPinCookie } from '../components/PinModal'
 
 const CLASSES = [
@@ -748,20 +748,20 @@ export default function Manager() {
                   <a
                     href={getExportJsonUrl()}
                     download
-                    className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-center text-sm"
+                    className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-sm flex items-center justify-center gap-2"
                   >
-                    📦 Export JSON
+                    <FileJsonIcon className="w-4 h-4" /> Export JSON
                   </a>
                   <a
                     href={getExportCsvUrl()}
                     download
-                    className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-center text-sm"
+                    className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-sm flex items-center justify-center gap-2"
                   >
-                    📊 Export CSV
+                    <FileSpreadsheetIcon className="w-4 h-4" /> Export CSV
                   </a>
                 </div>
-                <label className={`block w-full py-2 bg-trials-accent/20 border border-trials-accent rounded-lg hover:bg-trials-accent/30 transition-colors text-center text-sm cursor-pointer ${importing ? 'opacity-50' : ''}`}>
-                  {importing ? '⏳ Importing...' : '📥 Import JSON Backup'}
+                <label className={`w-full py-2 bg-trials-accent/20 border border-trials-accent rounded-lg hover:bg-trials-accent/30 transition-colors text-sm cursor-pointer flex items-center justify-center gap-2 ${importing ? 'opacity-50' : ''}`}>
+                  {importing ? <><LoaderIcon className="w-4 h-4 animate-spin" /> Importing...</> : <><DownloadIcon className="w-4 h-4" /> Import JSON Backup</>}
                   <input
                     type="file"
                     accept=".json,application/json"

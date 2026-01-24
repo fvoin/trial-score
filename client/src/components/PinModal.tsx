@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { verifyPin } from '../api'
+import { LockIcon, FlagIcon } from './Icons'
 
 interface PinModalProps {
   role: 'manager' | 'judge'
@@ -55,8 +56,8 @@ export default function PinModal({ role, onSuccess }: PinModalProps) {
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
       <div className="bg-trials-dark rounded-xl p-6 w-full max-w-sm">
-        <h2 className="text-2xl font-display font-bold text-trials-orange mb-2 text-center">
-          {role === 'manager' ? '🔐 Manager Access' : '🏁 Judge Access'}
+        <h2 className="text-2xl font-display font-bold text-trials-orange mb-2 text-center flex items-center justify-center gap-2">
+          {role === 'manager' ? <><LockIcon className="w-6 h-6" /> Manager Access</> : <><FlagIcon className="w-6 h-6" /> Judge Access</>}
         </h2>
         <p className="text-gray-400 text-center mb-6">
           Enter PIN to continue
