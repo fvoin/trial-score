@@ -186,7 +186,11 @@ export default function Judge() {
     if (!selectedSection) return
     
     try {
-      const lap = await getNextLap(competitor.id, selectedSection)
+      const { nextLap: lap, canStart } = await getNextLap(competitor.id, selectedSection)
+      if (!canStart) {
+        setError(`${competitor.name} hasn't finished their previous lap yet`)
+        return
+      }
       if (lap > 3) {
         setError(`${competitor.name} has completed all 3 laps at this section`)
         return

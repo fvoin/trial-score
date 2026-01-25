@@ -210,6 +210,23 @@ export function getNextLap(competitorId, sectionId) {
   return maxLap + 1;
 }
 
+// Check if previous lap is complete (has points or is DNF)
+export function canStartNewLap(competitorId, sectionId) {
+  const numCompId = parseInt(competitorId);
+  const numSecId = parseInt(sectionId);
+  const scores = db.scores.filter(
+    s => s.competitor_id === numCompId && s.section_id === numSecId
+  );
+  
+  if (scores.length === 0) return true; // No previous lap, can start
+  
+  // Find the latest lap
+  const latestLap = scores.reduce((max, s) => s.lap > max.lap ? s : max, scores[0]);
+  
+  // Check if it's complete (has points OR is DNF)
+  return latestLap.points !== null || latestLap.is_dnf === 1;
+}
+
 export function createScore(data) {
   const id = db.nextIds.score++;
   const score = {

@@ -3,6 +3,7 @@ import {
   getScores,
   getScoresBySection,
   getNextLap,
+  canStartNewLap,
   createScore,
   updateScore,
   deleteScore,
@@ -58,7 +59,8 @@ router.get('/leaderboard', (req, res) => {
 router.get('/next-lap/:competitorId/:sectionId', (req, res) => {
   try {
     const nextLap = getNextLap(req.params.competitorId, req.params.sectionId);
-    res.json({ nextLap });
+    const canStart = canStartNewLap(req.params.competitorId, req.params.sectionId);
+    res.json({ nextLap, canStart });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -68,6 +70,11 @@ router.get('/next-lap/:competitorId/:sectionId', (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { competitor_id, section_id, points, is_dnf } = req.body;
+    
+    // Check if previous lap is complete
+    if (!canStartNewLap(competitor_id, section_id)) {
+      return res.status(400).json({ error: 'Previous lap not finished yet' });
+    }
     
     // Auto-determine lap number
     const lap = getNextLap(competitor_id, section_id);

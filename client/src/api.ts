@@ -115,11 +115,10 @@ export async function getScoresBySection(sectionId: number): Promise<Score[]> {
   return res.json();
 }
 
-export async function getNextLap(competitorId: number, sectionId: number): Promise<number> {
+export async function getNextLap(competitorId: number, sectionId: number): Promise<{ nextLap: number; canStart: boolean }> {
   const res = await fetch(`${API_BASE}/scores/next-lap/${competitorId}/${sectionId}`);
   if (!res.ok) throw new Error('Failed to fetch next lap');
-  const data = await res.json();
-  return data.nextLap;
+  return res.json();
 }
 
 export async function createScore(data: {
