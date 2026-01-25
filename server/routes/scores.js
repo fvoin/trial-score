@@ -66,7 +66,39 @@ router.get('/next-lap/:competitorId/:sectionId', (req, res) => {
   }
 });
 
-// POST create score
+// POST start a new lap (creates incomplete score)
+router.post('/start-lap', async (req, res) => {
+  try {
+    const { competitor_id, section_id } = req.body;
+    
+    // Check if previous lap is complete
+    if (!canStartNewLap(competitor_id, section_id)) {
+      return res.status(400).json({ error: 'Previous lap not finished yet' });
+    }
+    
+    // Auto-determine lap number
+    const lap = getNextLap(competitor_id, section_id);
+    
+    if (lap > 3) {
+      return res.status(400).json({ error: 'All 3 laps already scored for this section' });
+    }
+    
+    // Create incomplete score (no points, not DNF)
+    const score = createScore({
+      competitor_id,
+      section_id,
+      lap,
+      points: null,
+      is_dnf: 0
+    });
+    
+    res.status(201).json(score);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// POST create score (complete a lap directly without start-lap)
 router.post('/', async (req, res) => {
   try {
     const { competitor_id, section_id, points, is_dnf } = req.body;

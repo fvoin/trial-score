@@ -121,6 +121,22 @@ export async function getNextLap(competitorId: number, sectionId: number): Promi
   return res.json();
 }
 
+export async function startLap(data: {
+  competitor_id: number;
+  section_id: number;
+}): Promise<Score> {
+  const res = await fetch(`${API_BASE}/scores/start-lap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || 'Failed to start lap');
+  }
+  return res.json();
+}
+
 export async function createScore(data: {
   competitor_id: number;
   section_id: number;
