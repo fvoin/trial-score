@@ -5,7 +5,7 @@ import {
   getSections,
   getScoresBySection,
   getNextLap,
-  startLap,
+  createScore,
   updateScore,
   deleteScore,
   getAuthRequired,
@@ -30,7 +30,6 @@ const SCORE_OPTIONS = [
 
 function getScoreColor(points: number | null, isDnf: boolean): string {
   if (isDnf) return 'bg-gray-600 text-white'
-  if (points === null) return 'bg-trials-accent/30 text-trials-accent animate-pulse' // In progress
   if (points === 0) return 'bg-trials-success text-trials-darker'
   if (points === 1) return 'bg-emerald-400 text-trials-darker'
   if (points === 2) return 'bg-trials-warning text-trials-darker'
@@ -52,7 +51,6 @@ export default function Judge() {
 
   // Scoring modal state
   const [scoringCompetitor, setScoringCompetitor] = useState<Competitor | null>(null)
-  const [currentScoreId, setCurrentScoreId] = useState<number | null>(null)
   const [nextLap, setNextLap] = useState(1)
   const [submitting, setSubmitting] = useState(false)
 
@@ -188,43 +186,35 @@ export default function Judge() {
     if (!selectedSection) return
     
     try {
-      const { nextLap: lap, canStart } = await getNextLap(competitor.id, selectedSection)
-      if (!canStart) {
-        setError(`${competitor.name} hasn't finished their previous lap yet`)
-        return
-      }
+      const { nextLap: lap, canScore, currentLap, incompleteSections } = await getNextLap(competitor.id, selectedSection)
       if (lap > 3) {
         setError(`${competitor.name} has completed all 3 laps at this section`)
         return
       }
-      
-      // Start the lap (create incomplete score)
-      const score = await startLap({
-        competitor_id: competitor.id,
-        section_id: selectedSection
-      })
-      
-      setCurrentScoreId(score.id)
+      if (!canScore) {
+        const missing = incompleteSections.join(', ')
+        setError(`${competitor.name} must complete Lap ${currentLap} first. Missing: ${missing}`)
+        return
+      }
       setNextLap(lap)
       setScoringCompetitor(competitor)
-      loadSectionScores() // Refresh to show the in-progress lap
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to start lap')
+    } catch {
+      setError('Failed to get lap info')
     }
   }
 
   async function submitScore(points: number, isDnf: boolean) {
-    if (!scoringCompetitor || !currentScoreId) return
+    if (!scoringCompetitor || !selectedSection) return
     
     setSubmitting(true)
     try {
-      // Update the incomplete score with actual points
-      await updateScore(currentScoreId, {
+      await createScore({
+        competitor_id: scoringCompetitor.id,
+        section_id: selectedSection,
         points: isDnf ? undefined : points,
         is_dnf: isDnf
       })
       setScoringCompetitor(null)
-      setCurrentScoreId(null)
       loadSectionScores()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to submit score')
@@ -259,20 +249,6 @@ export default function Judge() {
     } catch {
       setError('Failed to delete score')
     }
-  }
-
-  async function cancelScoring() {
-    if (currentScoreId) {
-      try {
-        // Delete the incomplete score
-        await deleteScore(currentScoreId)
-        loadSectionScores()
-      } catch {
-        // Ignore error on cancel
-      }
-    }
-    setScoringCompetitor(null)
-    setCurrentScoreId(null)
   }
 
   // Show PIN modal if needed
@@ -447,7 +423,7 @@ export default function Judge() {
 
                   {/* Score */}
                   <div className={`w-10 h-10 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center font-display text-lg sm:text-2xl font-bold shrink-0 ${getScoreColor(score.points, !!score.is_dnf)}`}>
-                    {score.is_dnf ? 'DNF' : score.points === null ? '...' : score.points}
+                    {score.is_dnf ? 'DNF' : score.points}
                   </div>
 
                   {/* Actions */}
@@ -523,19 +499,16 @@ export default function Judge() {
 
                   {/* Score indicators - show actual scores */}
                   <div className="flex gap-1 shrink-0">
-                    {scores.map((score, idx) => {
-                      const isInProgress = score && score.points === null && !score.is_dnf
-                      return (
-                        <div
-                          key={idx}
-                          className={`w-8 h-8 sm:w-10 sm:h-10 rounded flex items-center justify-center text-xs sm:text-sm font-bold ${
-                            score ? getScoreColor(score.points, !!score.is_dnf) : 'bg-gray-700 text-gray-500'
-                          }`}
-                        >
-                          {score ? (score.is_dnf ? 'X' : isInProgress ? '...' : score.points) : '-'}
-                        </div>
-                      )
-                    })}
+                    {scores.map((score, idx) => (
+                      <div
+                        key={idx}
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded flex items-center justify-center text-xs sm:text-sm font-bold ${
+                          score ? getScoreColor(score.points, !!score.is_dnf) : 'bg-gray-700 text-gray-500'
+                        }`}
+                      >
+                        {score ? (score.is_dnf ? 'X' : score.points) : '-'}
+                      </div>
+                    ))}
                   </div>
                 </button>
               )
@@ -583,9 +556,8 @@ export default function Judge() {
             </div>
 
             <button
-              onClick={cancelScoring}
-              disabled={submitting}
-              className="w-full py-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
+              onClick={() => setScoringCompetitor(null)}
+              className="w-full py-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
             >
               Cancel
             </button>

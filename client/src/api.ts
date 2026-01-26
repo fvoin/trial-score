@@ -115,25 +115,16 @@ export async function getScoresBySection(sectionId: number): Promise<Score[]> {
   return res.json();
 }
 
-export async function getNextLap(competitorId: number, sectionId: number): Promise<{ nextLap: number; canStart: boolean }> {
-  const res = await fetch(`${API_BASE}/scores/next-lap/${competitorId}/${sectionId}`);
-  if (!res.ok) throw new Error('Failed to fetch next lap');
-  return res.json();
+export interface NextLapResponse {
+  nextLap: number;
+  canScore: boolean;
+  currentLap: number;
+  incompleteSections: string[];
 }
 
-export async function startLap(data: {
-  competitor_id: number;
-  section_id: number;
-}): Promise<Score> {
-  const res = await fetch(`${API_BASE}/scores/start-lap`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || 'Failed to start lap');
-  }
+export async function getNextLap(competitorId: number, sectionId: number): Promise<NextLapResponse> {
+  const res = await fetch(`${API_BASE}/scores/next-lap/${competitorId}/${sectionId}`);
+  if (!res.ok) throw new Error('Failed to fetch next lap');
   return res.json();
 }
 

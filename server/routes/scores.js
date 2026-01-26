@@ -59,60 +59,44 @@ router.get('/leaderboard', (req, res) => {
 router.get('/next-lap/:competitorId/:sectionId', (req, res) => {
   try {
     const nextLap = getNextLap(req.params.competitorId, req.params.sectionId);
-    const canStart = canStartNewLap(req.params.competitorId, req.params.sectionId);
-    res.json({ nextLap, canStart });
+    const lapStatus = canStartNewLap(req.params.competitorId);
+    
+    // If the next lap would be higher than current lap + 1, they need to complete current lap first
+    // Exception: if they've already scored this section for current lap, they can score it again (edit case)
+    const wouldStartNewLap = nextLap > lapStatus.currentLap;
+    const canScore = !wouldStartNewLap || lapStatus.canScore;
+    
+    res.json({ 
+      nextLap, 
+      canScore,
+      currentLap: lapStatus.currentLap,
+      incompleteSections: wouldStartNewLap && !lapStatus.canScore ? lapStatus.incompleteSections : []
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// POST start a new lap (creates incomplete score)
-router.post('/start-lap', async (req, res) => {
-  try {
-    const { competitor_id, section_id } = req.body;
-    
-    // Check if previous lap is complete
-    if (!canStartNewLap(competitor_id, section_id)) {
-      return res.status(400).json({ error: 'Previous lap not finished yet' });
-    }
-    
-    // Auto-determine lap number
-    const lap = getNextLap(competitor_id, section_id);
-    
-    if (lap > 3) {
-      return res.status(400).json({ error: 'All 3 laps already scored for this section' });
-    }
-    
-    // Create incomplete score (no points, not DNF)
-    const score = createScore({
-      competitor_id,
-      section_id,
-      lap,
-      points: null,
-      is_dnf: 0
-    });
-    
-    res.status(201).json(score);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// POST create score (complete a lap directly without start-lap)
+// POST create score
 router.post('/', async (req, res) => {
   try {
     const { competitor_id, section_id, points, is_dnf } = req.body;
     
-    // Check if previous lap is complete
-    if (!canStartNewLap(competitor_id, section_id)) {
-      return res.status(400).json({ error: 'Previous lap not finished yet' });
-    }
-    
     // Auto-determine lap number
     const lap = getNextLap(competitor_id, section_id);
     
     if (lap > 3) {
       return res.status(400).json({ error: 'All 3 laps already scored for this section' });
+    }
+    
+    // Check if previous lap is complete at all sections
+    const lapStatus = canStartNewLap(competitor_id);
+    const wouldStartNewLap = lap > lapStatus.currentLap;
+    if (wouldStartNewLap && !lapStatus.canScore) {
+      const missing = lapStatus.incompleteSections.join(', ');
+      return res.status(400).json({ 
+        error: `Must complete Lap ${lapStatus.currentLap} first. Missing: ${missing}` 
+      });
     }
     
     const score = createScore({

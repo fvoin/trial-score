@@ -210,21 +210,58 @@ export function getNextLap(competitorId, sectionId) {
   return maxLap + 1;
 }
 
-// Check if previous lap is complete (has points or is DNF)
-export function canStartNewLap(competitorId, sectionId) {
+// Check if a competitor can start a new lap
+// Rule: must complete ALL sections in current lap before starting next lap at ANY section
+export function canStartNewLap(competitorId) {
   const numCompId = parseInt(competitorId);
-  const numSecId = parseInt(sectionId);
-  const scores = db.scores.filter(
-    s => s.competitor_id === numCompId && s.section_id === numSecId
+  const competitor = getCompetitor(numCompId);
+  if (!competitor) return { canScore: true, currentLap: 1, incompleteSections: [] };
+  
+  // Determine required sections based on class
+  const allSections = getSections();
+  let requiredSections;
+  
+  if (competitor.primary_class === 'kids') {
+    requiredSections = allSections.filter(s => s.type === 'kids');
+  } else {
+    requiredSections = allSections.filter(s => s.type === 'main');
+  }
+  
+  // Get all scores for this competitor at required sections
+  const competitorScores = db.scores.filter(s => 
+    s.competitor_id === numCompId && 
+    requiredSections.some(rs => rs.id === s.section_id)
   );
   
-  if (scores.length === 0) return true; // No previous lap, can start
+  // Find the maximum lap number at any required section
+  let maxLap = 0;
+  for (const section of requiredSections) {
+    const sectionScores = competitorScores.filter(s => s.section_id === section.id);
+    const sectionMaxLap = sectionScores.reduce((max, s) => Math.max(max, s.lap), 0);
+    maxLap = Math.max(maxLap, sectionMaxLap);
+  }
   
-  // Find the latest lap
-  const latestLap = scores.reduce((max, s) => s.lap > max.lap ? s : max, scores[0]);
+  if (maxLap === 0) {
+    // No scores yet, can start lap 1
+    return { canScore: true, currentLap: 1, incompleteSections: [] };
+  }
   
-  // Check if it's complete (has points OR is DNF)
-  return latestLap.points !== null || latestLap.is_dnf === 1;
+  // Check if all required sections are completed for maxLap
+  const incompleteSections = [];
+  for (const section of requiredSections) {
+    const sectionScore = competitorScores.find(
+      s => s.section_id === section.id && s.lap === maxLap
+    );
+    if (!sectionScore) {
+      incompleteSections.push(section.name);
+    }
+  }
+  
+  return {
+    canScore: incompleteSections.length === 0,
+    currentLap: maxLap,
+    incompleteSections
+  };
 }
 
 export function createScore(data) {
