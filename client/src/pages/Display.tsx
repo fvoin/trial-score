@@ -91,6 +91,33 @@ export default function Display() {
     }
   }
 
+  // Helper: calculate historical stats for a competitor at a given timestamp
+  function getHistoricalStats(
+    compId: number, 
+    atTime: number, 
+    isEnduro: boolean
+  ): { sections: number; total: number; avg: number } {
+    const relevantScores = scores.filter(s => {
+      if (Number(s.competitor_id) !== compId) return false
+      const sTime = new Date(s.created_at).getTime()
+      if (sTime > atTime) return false
+      if (isEnduro) {
+        return s.section_type === 'enduro'
+      } else {
+        return s.section_type === 'main' || s.section_type === 'kids'
+      }
+    })
+    
+    const sections = relevantScores.length
+    const total = relevantScores.reduce((sum, s) => {
+      if (s.is_dnf || s.points === null) return sum
+      return sum + s.points
+    }, 0)
+    const avg = sections > 0 ? total / sections : 0
+    
+    return { sections, total, avg }
+  }
+
   function getFilteredEntries(): DisplayEntry[] {
     // Max sections per class:
     // - Main (clubman/advanced): 6 sections × 3 laps = 18
@@ -100,42 +127,7 @@ export default function Display() {
     const MAX_KIDS_SECTIONS = 9
     const MAX_ENDURO_SECTIONS = 6
 
-    // Calculate current rankings per class based on current average score
-    // For trial classes: rank within primary_class
-    // For enduro: rank among all enduro participants
-    const classRankings = new Map<string, Map<number, number>>() // class -> (competitorId -> rank)
-    
-    // Group competitors by class and calculate their current averages
-    const classGroups: Record<string, Array<{ id: number; avg: number }>> = {
-      kids: [],
-      clubman: [],
-      advanced: [],
-      enduro: []
-    }
-    
-    leaderboard.forEach(comp => {
-      const compId = Number(comp.id)
-      // Trial ranking (by primary class)
-      if (comp.main_sections_done > 0) {
-        const avg = comp.main_total / comp.main_sections_done
-        classGroups[comp.primary_class].push({ id: compId, avg })
-      }
-      // Enduro ranking (separate)
-      if (comp.enduro_trial === 1 && comp.enduro_sections_done > 0) {
-        const avg = comp.enduro_total / comp.enduro_sections_done
-        classGroups.enduro.push({ id: compId, avg })
-      }
-    })
-    
-    // Sort each class by average (lowest first) and assign ranks
-    Object.entries(classGroups).forEach(([className, competitors]) => {
-      competitors.sort((a, b) => a.avg - b.avg)
-      const rankMap = new Map<number, number>()
-      competitors.forEach((c, idx) => rankMap.set(c.id, idx + 1))
-      classRankings.set(className, rankMap)
-    })
-
-    // Convert ALL scores to display entries
+    // Convert ALL scores to display entries with HISTORICAL rankings
     let entries: DisplayEntry[] = scores.map(score => {
       const compId = Number(score.competitor_id)
       const comp = leaderboard.find(c => Number(c.id) === compId)
@@ -150,34 +142,39 @@ export default function Display() {
           ? MAX_KIDS_SECTIONS 
           : MAX_MAIN_SECTIONS
       
-      // Calculate HISTORICAL stats: how many sections were done at the time of this score
-      // Count all scores for this competitor with created_at <= this score's created_at
-      const relevantScores = scores.filter(s => {
-        if (Number(s.competitor_id) !== compId) return false
-        const sTime = new Date(s.created_at).getTime()
-        if (sTime > scoreTime) return false
-        // For enduro section score, only count enduro scores
-        // For trial section score, only count main/kids scores
-        if (isEnduroSection) {
-          return s.section_type === 'enduro'
-        } else {
-          return s.section_type === 'main' || s.section_type === 'kids'
-        }
-      })
-      
-      const sectionsDoneAtTime = relevantScores.length
-      const totalPointsAtTime = relevantScores.reduce((sum, s) => {
-        if (s.is_dnf || s.points === null) return sum
-        return sum + s.points
-      }, 0)
+      // Calculate HISTORICAL stats for this competitor at time of score
+      const myStats = getHistoricalStats(compId, scoreTime, isEnduroSection)
+      const sectionsDoneAtTime = myStats.sections
+      const totalPointsAtTime = myStats.total
       const averageScoreAtTime = sectionsDoneAtTime > 0
         ? (totalPointsAtTime / sectionsDoneAtTime).toFixed(1)
         : '0.0'
       
-      // Get current rank for this competitor in the appropriate class
+      // Calculate HISTORICAL rank: compare with all competitors at this timestamp
+      // For enduro sections: rank among enduro participants
+      // For trial sections: rank among same primary class
       const rankClass = isEnduroSection ? 'enduro' : (comp?.primary_class || 'clubman')
-      const rankMap = classRankings.get(rankClass)
-      const rank = rankMap?.get(compId) || 0
+      
+      // Get all competitors in this class and calculate their historical averages
+      const classCompetitors: Array<{ id: number; avg: number }> = []
+      leaderboard.forEach(c => {
+        const cId = Number(c.id)
+        // Check if competitor belongs to this ranking class
+        const belongsToClass = isEnduroSection 
+          ? c.enduro_trial === 1 
+          : c.primary_class === rankClass
+        
+        if (belongsToClass) {
+          const stats = getHistoricalStats(cId, scoreTime, isEnduroSection)
+          if (stats.sections > 0) {
+            classCompetitors.push({ id: cId, avg: stats.avg })
+          }
+        }
+      })
+      
+      // Sort by average (lowest first) and find rank
+      classCompetitors.sort((a, b) => a.avg - b.avg)
+      const rank = classCompetitors.findIndex(c => c.id === compId) + 1
       
       return {
         score,
