@@ -24,14 +24,24 @@ function getTransporter() {
 export async function sendScoreEmail(score) {
   const settings = getSettings();
   
+  console.log('Email check:', {
+    email_backup_enabled: settings.email_backup_enabled,
+    email_backup_address: settings.email_backup_address,
+    smtp_user_set: !!process.env.SMTP_USER,
+    smtp_pass_set: !!process.env.SMTP_PASS
+  });
+  
   if (!settings.email_backup_enabled || !settings.email_backup_address) {
+    console.log('Email skipped: backup not enabled or no address');
     return null;
   }
 
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log('Email backup enabled but SMTP not configured');
+    console.log('Email skipped: SMTP credentials not configured');
     return null;
   }
+  
+  console.log('Sending email to:', settings.email_backup_address);
 
   const pointsDisplay = score.is_dnf ? 'DNF' : score.points;
   
