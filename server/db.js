@@ -211,17 +211,29 @@ export function getNextLap(competitorId, sectionId) {
 }
 
 // Check if a competitor can start a new lap
-// Rule: must complete ALL sections in current lap before starting next lap at ANY section
-export function canStartNewLap(competitorId) {
+// Rule: must complete ALL sections of the same type in current lap before starting next lap
+// Lap tracking is SEPARATE for: main sections, kids sections, and enduro sections
+export function canStartNewLap(competitorId, sectionId) {
   const numCompId = parseInt(competitorId);
+  const numSecId = sectionId ? parseInt(sectionId) : null;
   const competitor = getCompetitor(numCompId);
   if (!competitor) return { canScore: true, currentLap: 1, incompleteSections: [] };
   
-  // Determine required sections based on class
+  // Determine required sections based on the section being scored
   const allSections = getSections();
+  const currentSection = numSecId ? getSection(numSecId) : null;
   let requiredSections;
   
-  if (competitor.primary_class === 'kids') {
+  // If scoring an enduro section, only check enduro sections
+  if (currentSection?.type === 'enduro') {
+    requiredSections = allSections.filter(s => s.type === 'enduro');
+  }
+  // If scoring a kids section, only check kids sections
+  else if (currentSection?.type === 'kids') {
+    requiredSections = allSections.filter(s => s.type === 'kids');
+  }
+  // For main sections (or if no section specified), check based on primary class
+  else if (competitor.primary_class === 'kids') {
     requiredSections = allSections.filter(s => s.type === 'kids');
   } else {
     requiredSections = allSections.filter(s => s.type === 'main');

@@ -58,8 +58,10 @@ router.get('/leaderboard', (req, res) => {
 // GET next lap for competitor at section
 router.get('/next-lap/:competitorId/:sectionId', (req, res) => {
   try {
-    const nextLap = getNextLap(req.params.competitorId, req.params.sectionId);
-    const lapStatus = canStartNewLap(req.params.competitorId);
+    const { competitorId, sectionId } = req.params;
+    const nextLap = getNextLap(competitorId, sectionId);
+    // Pass sectionId to check lap completion for the correct section type
+    const lapStatus = canStartNewLap(competitorId, sectionId);
     
     // If the next lap would be higher than current lap + 1, they need to complete current lap first
     // Exception: if they've already scored this section for current lap, they can score it again (edit case)
@@ -89,8 +91,8 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'All 3 laps already scored for this section' });
     }
     
-    // Check if previous lap is complete at all sections
-    const lapStatus = canStartNewLap(competitor_id);
+    // Check if previous lap is complete at all sections of this type
+    const lapStatus = canStartNewLap(competitor_id, section_id);
     const wouldStartNewLap = lap > lapStatus.currentLap;
     if (wouldStartNewLap && !lapStatus.canScore) {
       const missing = lapStatus.incompleteSections.join(', ');

@@ -44,7 +44,9 @@ export default function Judge() {
   const [selectedSection, setSelectedSection] = useState<number | null>(null)
   const [sectionScores, setSectionScores] = useState<Score[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingScores, setLoadingScores] = useState(false)
   const [error, setError] = useState('')
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   
   // Auth state
   const [needsAuth, setNeedsAuth] = useState(false)
@@ -100,6 +102,9 @@ export default function Judge() {
   useEffect(() => {
     if (selectedSection) {
       localStorage.setItem(STORAGE_KEY, selectedSection.toString())
+      // Clear old scores immediately and show loading state
+      setSectionScores([])
+      setLoadingScores(true)
       loadSectionScores()
     }
   }, [selectedSection])
@@ -130,6 +135,8 @@ export default function Judge() {
       setSectionScores(scores)
     } catch {
       console.error('Failed to load section scores')
+    } finally {
+      setLoadingScores(false)
     }
   }
 
@@ -242,12 +249,17 @@ export default function Judge() {
   }
 
   async function handleDeleteScore(scoreId: number) {
+    if (deletingId) return // Prevent double-tap
     if (!confirm('Delete this score entry?')) return
+    
+    setDeletingId(scoreId)
     try {
       await deleteScore(scoreId)
-      loadSectionScores()
+      await loadSectionScores()
     } catch {
       setError('Failed to delete score')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -382,7 +394,12 @@ export default function Judge() {
       )}
 
       <main className="flex-1 overflow-y-auto p-3 sm:p-4">
-        {showHistory ? (
+        {loadingScores ? (
+          // Loading state while fetching section scores
+          <div className="flex items-center justify-center py-12">
+            <div className="text-lg text-trials-accent animate-pulse">Loading scores...</div>
+          </div>
+        ) : showHistory ? (
           // Score History View
           <div className="space-y-2 sm:space-y-3">
             <h2 className="text-base sm:text-lg text-gray-400 mb-3 sm:mb-4">
@@ -430,13 +447,17 @@ export default function Judge() {
                   <div className="flex gap-1 sm:gap-2 shrink-0">
                     <button
                       onClick={() => setEditingScore(score)}
-                      className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
+                      disabled={deletingId !== null}
+                      className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50"
                     >
                       <EditIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                     <button
                       onClick={() => handleDeleteScore(score.id)}
-                      className="p-2 bg-trials-danger/20 hover:bg-trials-danger/40 text-trials-danger rounded-lg"
+                      disabled={deletingId !== null}
+                      className={`p-2 bg-trials-danger/20 hover:bg-trials-danger/40 text-trials-danger rounded-lg disabled:opacity-50 ${
+                        deletingId === score.id ? 'animate-pulse' : ''
+                      }`}
                     >
                       <TrashIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>

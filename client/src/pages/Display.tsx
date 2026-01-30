@@ -84,16 +84,6 @@ export default function Display() {
   }
 
   function getFilteredEntries(): DisplayEntry[] {
-    // Get unique competitors from scores (most recent score per competitor)
-    const competitorLatestScore = new Map<number, Score>()
-    
-    // Scores are already sorted by created_at desc from API
-    scores.forEach(score => {
-      if (!competitorLatestScore.has(score.competitor_id)) {
-        competitorLatestScore.set(score.competitor_id, score)
-      }
-    })
-
     // Compute total points per competitor from all their scores
     // Use Number() to handle potential string IDs from JSON
     const competitorTotals = new Map<number, number>()
@@ -105,8 +95,8 @@ export default function Display() {
       }
     })
 
-    // Convert to display entries
-    let entries: DisplayEntry[] = Array.from(competitorLatestScore.values()).map(score => {
+    // Convert ALL scores to display entries (not just one per competitor)
+    let entries: DisplayEntry[] = scores.map(score => {
       const compId = Number(score.competitor_id)
       const comp = leaderboard.find(c => Number(c.id) === compId)
       return {
@@ -127,11 +117,7 @@ export default function Display() {
       })
     }
 
-    // Sort by score time (most recent first) - scores already sorted but re-sort to be safe
-    entries.sort((a, b) => 
-      new Date(b.score.created_at).getTime() - new Date(a.score.created_at).getTime()
-    )
-
+    // Scores are already sorted by created_at desc from API
     return entries
   }
 
