@@ -92,8 +92,12 @@ export default function Display() {
   }
 
   function getFilteredEntries(): DisplayEntry[] {
-    // Max sections: 6 sections × 3 laps = 18 for trial, 2 sections × 3 laps = 6 for enduro
-    const MAX_TRIAL_SECTIONS = 18
+    // Max sections per class:
+    // - Main (clubman/advanced): 6 sections × 3 laps = 18
+    // - Kids: 3 sections × 3 laps = 9
+    // - Enduro: 2 sections × 3 laps = 6
+    const MAX_MAIN_SECTIONS = 18
+    const MAX_KIDS_SECTIONS = 9
     const MAX_ENDURO_SECTIONS = 6
 
     // Calculate current rankings per class based on current average score
@@ -139,7 +143,12 @@ export default function Display() {
       
       // Determine if this score is from an enduro section
       const isEnduroSection = score.section_type === 'enduro'
-      const maxSections = isEnduroSection ? MAX_ENDURO_SECTIONS : MAX_TRIAL_SECTIONS
+      const isKidsSection = score.section_type === 'kids'
+      const maxSections = isEnduroSection 
+        ? MAX_ENDURO_SECTIONS 
+        : isKidsSection 
+          ? MAX_KIDS_SECTIONS 
+          : MAX_MAIN_SECTIONS
       
       // Calculate HISTORICAL stats: how many sections were done at the time of this score
       // Count all scores for this competitor with created_at <= this score's created_at
@@ -286,7 +295,7 @@ export default function Display() {
                       }`}
                     >
                       {/* Time */}
-                      <div className="text-gray-400 text-xs md:text-sm">
+                      <div className="flex items-center text-gray-400 text-xs md:text-sm">
                         {new Date(score.created_at).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit'
@@ -294,10 +303,8 @@ export default function Display() {
                       </div>
 
                       {/* Rank in class */}
-                      <div className="flex justify-center items-center">
-                        <div className="w-8 md:w-10 text-center font-display text-xl md:text-2xl font-bold text-trials-orange tabular-nums">
-                          {rank > 0 ? rank : '-'}
-                        </div>
+                      <div className="flex items-center justify-center font-display text-xl md:text-2xl font-bold text-trials-orange">
+                        {rank > 0 ? rank : '-'}
                       </div>
 
                       {/* Photo + Name + Number + Class */}
