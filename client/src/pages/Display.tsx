@@ -34,10 +34,13 @@ interface DisplayEntry {
   competitor: LeaderboardEntry | undefined
   // For enduro sections: show enduro stats, for main/kids: show main stats
   isEnduroSection: boolean
-  sectionsDone: number
+  // Historical stats at the time of this score
+  sectionsDoneAtTime: number
   maxSections: number
-  totalPoints: number
-  averageScore: string
+  totalPointsAtTime: number
+  averageScoreAtTime: string
+  // Current rank in class (based on current average)
+  rank: number
 }
 
 export default function Display() {
@@ -93,36 +96,89 @@ export default function Display() {
     const MAX_TRIAL_SECTIONS = 18
     const MAX_ENDURO_SECTIONS = 6
 
-    // Convert ALL scores to display entries (not just one per competitor)
+    // Calculate current rankings per class based on current average score
+    // For trial classes: rank within primary_class
+    // For enduro: rank among all enduro participants
+    const classRankings = new Map<string, Map<number, number>>() // class -> (competitorId -> rank)
+    
+    // Group competitors by class and calculate their current averages
+    const classGroups: Record<string, Array<{ id: number; avg: number }>> = {
+      kids: [],
+      clubman: [],
+      advanced: [],
+      enduro: []
+    }
+    
+    leaderboard.forEach(comp => {
+      const compId = Number(comp.id)
+      // Trial ranking (by primary class)
+      if (comp.main_sections_done > 0) {
+        const avg = comp.main_total / comp.main_sections_done
+        classGroups[comp.primary_class].push({ id: compId, avg })
+      }
+      // Enduro ranking (separate)
+      if (comp.enduro_trial === 1 && comp.enduro_sections_done > 0) {
+        const avg = comp.enduro_total / comp.enduro_sections_done
+        classGroups.enduro.push({ id: compId, avg })
+      }
+    })
+    
+    // Sort each class by average (lowest first) and assign ranks
+    Object.entries(classGroups).forEach(([className, competitors]) => {
+      competitors.sort((a, b) => a.avg - b.avg)
+      const rankMap = new Map<number, number>()
+      competitors.forEach((c, idx) => rankMap.set(c.id, idx + 1))
+      classRankings.set(className, rankMap)
+    })
+
+    // Convert ALL scores to display entries
     let entries: DisplayEntry[] = scores.map(score => {
       const compId = Number(score.competitor_id)
       const comp = leaderboard.find(c => Number(c.id) === compId)
+      const scoreTime = new Date(score.created_at).getTime()
       
       // Determine if this score is from an enduro section
       const isEnduroSection = score.section_type === 'enduro'
-      
-      // Use appropriate stats based on section type
-      const sectionsDone = isEnduroSection 
-        ? (comp?.enduro_sections_done || 0)
-        : (comp?.main_sections_done || 0)
       const maxSections = isEnduroSection ? MAX_ENDURO_SECTIONS : MAX_TRIAL_SECTIONS
-      const totalPoints = isEnduroSection
-        ? (comp?.enduro_total || 0)
-        : (comp?.main_total || 0)
       
-      // Calculate average score (total / sections done)
-      const averageScore = sectionsDone > 0 
-        ? (totalPoints / sectionsDone).toFixed(1)
+      // Calculate HISTORICAL stats: how many sections were done at the time of this score
+      // Count all scores for this competitor with created_at <= this score's created_at
+      const relevantScores = scores.filter(s => {
+        if (Number(s.competitor_id) !== compId) return false
+        const sTime = new Date(s.created_at).getTime()
+        if (sTime > scoreTime) return false
+        // For enduro section score, only count enduro scores
+        // For trial section score, only count main/kids scores
+        if (isEnduroSection) {
+          return s.section_type === 'enduro'
+        } else {
+          return s.section_type === 'main' || s.section_type === 'kids'
+        }
+      })
+      
+      const sectionsDoneAtTime = relevantScores.length
+      const totalPointsAtTime = relevantScores.reduce((sum, s) => {
+        if (s.is_dnf || s.points === null) return sum
+        return sum + s.points
+      }, 0)
+      const averageScoreAtTime = sectionsDoneAtTime > 0
+        ? (totalPointsAtTime / sectionsDoneAtTime).toFixed(1)
         : '0.0'
+      
+      // Get current rank for this competitor in the appropriate class
+      const rankClass = isEnduroSection ? 'enduro' : (comp?.primary_class || 'clubman')
+      const rankMap = classRankings.get(rankClass)
+      const rank = rankMap?.get(compId) || 0
       
       return {
         score,
         competitor: comp,
         isEnduroSection,
-        sectionsDone,
+        sectionsDoneAtTime,
         maxSections,
-        totalPoints,
-        averageScore
+        totalPointsAtTime,
+        averageScoreAtTime,
+        rank
       }
     })
 
@@ -207,9 +263,9 @@ export default function Display() {
             {/* Min width ensures horizontal scroll on narrow screens */}
             <div className="min-w-[700px]">
               {/* Table Header */}
-              <div className="grid grid-cols-[80px_60px_1fr_120px_60px_80px] md:grid-cols-[100px_70px_1fr_140px_70px_110px] gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 text-gray-400 font-display text-sm md:text-lg border-b border-gray-700 sticky top-0 bg-trials-darker">
+              <div className="grid grid-cols-[80px_50px_1fr_120px_60px_80px] md:grid-cols-[100px_60px_1fr_140px_70px_110px] gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 text-gray-400 font-display text-sm md:text-lg border-b border-gray-700 sticky top-0 bg-trials-darker">
                 <div>TIME</div>
-                <div>NO.</div>
+                <div className="text-center">RANK</div>
                 <div>RIDER</div>
                 <div className="text-center">SECTION</div>
                 <div className="text-center">PTS</div>
@@ -219,13 +275,13 @@ export default function Display() {
               {/* Rows */}
               <div className="divide-y divide-gray-800">
                 {entries.map((entry, index) => {
-                  const { score, competitor, isEnduroSection, sectionsDone, maxSections, averageScore } = entry
+                  const { score, competitor, isEnduroSection, sectionsDoneAtTime, maxSections, averageScoreAtTime, rank } = entry
                   const isRecent = index === 0
 
                   return (
                     <div
                       key={score.id}
-                      className={`grid grid-cols-[80px_60px_1fr_120px_60px_80px] md:grid-cols-[100px_70px_1fr_140px_70px_110px] gap-2 md:gap-4 px-3 md:px-4 py-3 md:py-4 items-center transition-all ${
+                      className={`grid grid-cols-[80px_50px_1fr_120px_60px_80px] md:grid-cols-[100px_60px_1fr_140px_70px_110px] gap-2 md:gap-4 px-3 md:px-4 py-3 md:py-4 items-center transition-all ${
                         isRecent ? 'bg-trials-orange/10 border-l-4 border-trials-orange' : ''
                       }`}
                     >
@@ -237,12 +293,12 @@ export default function Display() {
                         })}
                       </div>
 
-                      {/* Number */}
-                      <div className="font-display text-xl md:text-2xl font-bold text-trials-orange">
-                        #{score.competitor_number}
+                      {/* Rank in class */}
+                      <div className="text-center font-display text-xl md:text-2xl font-bold text-trials-orange">
+                        {rank > 0 ? rank : '-'}
                       </div>
 
-                      {/* Name + Photo + Class */}
+                      {/* Photo + Name + Number + Class */}
                       <div className="flex items-center gap-2 md:gap-4 min-w-0">
                         <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gray-700 overflow-hidden flex-shrink-0">
                           {competitor?.photo_url ? (
@@ -255,13 +311,16 @@ export default function Display() {
                         </div>
                         <div className="min-w-0">
                           <div className="text-base md:text-xl font-semibold truncate">{score.competitor_name}</div>
-                          {competitor && (
-                            <div className={`text-xs md:text-sm font-display font-bold ${
-                              isEnduroSection ? CLASS_COLORS['enduro'] : CLASS_COLORS[competitor.primary_class]
-                            }`}>
-                              {isEnduroSection ? 'ENDURO' : CLASS_LABELS[competitor.primary_class]}
-                            </div>
-                          )}
+                          <div className="flex items-center gap-1 md:gap-2">
+                            <span className="text-xs md:text-sm text-trials-orange font-bold">#{score.competitor_number}</span>
+                            {competitor && (
+                              <span className={`text-xs md:text-sm font-display font-bold ${
+                                isEnduroSection ? CLASS_COLORS['enduro'] : CLASS_COLORS[competitor.primary_class]
+                              }`}>
+                                {isEnduroSection ? 'ENDURO' : CLASS_LABELS[competitor.primary_class]}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -278,15 +337,15 @@ export default function Display() {
                         </div>
                       </div>
 
-                      {/* Average + Sections done */}
+                      {/* Average + Sections done (historical at time of score) */}
                       <div className="text-right">
                         <div className={`font-display text-lg md:text-2xl font-bold ${
-                          averageScore === '0.0' ? 'text-trials-success' : 'text-white'
+                          averageScoreAtTime === '0.0' ? 'text-trials-success' : 'text-white'
                         }`}>
-                          {averageScore}
+                          {averageScoreAtTime}
                         </div>
                         <div className="text-xs md:text-sm text-gray-500">
-                          {sectionsDone}/{maxSections}
+                          {sectionsDoneAtTime}/{maxSections}
                         </div>
                       </div>
                     </div>
