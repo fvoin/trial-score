@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   getCompetitors,
@@ -47,6 +47,10 @@ export default function Judge() {
   const [loadingScores, setLoadingScores] = useState(false)
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  
+  // Track if this is initial load from localStorage (skip loading animation)
+  const isInitialLoad = useRef(true)
   
   // Auth state
   const [needsAuth, setNeedsAuth] = useState(false)
@@ -102,10 +106,22 @@ export default function Judge() {
   useEffect(() => {
     if (selectedSection) {
       localStorage.setItem(STORAGE_KEY, selectedSection.toString())
-      // Clear old scores immediately and show loading state
-      setSectionScores([])
-      setLoadingScores(true)
-      loadSectionScores()
+      // Clear error when changing sections
+      setError('')
+      
+      // Only show loading state when manually switching (not on initial load)
+      if (isInitialLoad.current) {
+        isInitialLoad.current = false
+        loadSectionScores()
+      } else {
+        // Clear old scores immediately and show loading state
+        setSectionScores([])
+        setLoadingScores(true)
+        loadSectionScores()
+      }
+    } else {
+      // Clear error when going back to section selection
+      setError('')
     }
   }, [selectedSection])
 
@@ -248,16 +264,26 @@ export default function Judge() {
     }
   }
 
-  async function handleDeleteScore(scoreId: number) {
-    if (deletingId) return // Prevent double-tap
-    if (!confirm('Delete this score entry?')) return
+  function handleDeleteClick(scoreId: number) {
+    if (deletingId) return // Prevent double-tap while deleting
+    setConfirmDeleteId(scoreId)
+  }
+
+  async function confirmDelete() {
+    if (!confirmDeleteId || deletingId) return
     
+    const scoreId = confirmDeleteId
+    setConfirmDeleteId(null)
     setDeletingId(scoreId)
+    
     try {
+      // Optimistically remove from local state for instant feedback
+      setSectionScores(prev => prev.filter(s => s.id !== scoreId))
       await deleteScore(scoreId)
-      await loadSectionScores()
     } catch {
       setError('Failed to delete score')
+      // Reload scores on error to restore state
+      loadSectionScores()
     } finally {
       setDeletingId(null)
     }
@@ -453,7 +479,7 @@ export default function Judge() {
                       <EditIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                     <button
-                      onClick={() => handleDeleteScore(score.id)}
+                      onClick={() => handleDeleteClick(score.id)}
                       disabled={deletingId !== null}
                       className={`p-2 bg-trials-danger/20 hover:bg-trials-danger/40 text-trials-danger rounded-lg disabled:opacity-50 ${
                         deletingId === score.id ? 'animate-pulse' : ''
@@ -620,6 +646,31 @@ export default function Judge() {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-trials-dark rounded-xl p-6 w-full max-w-sm">
+            <h2 className="text-xl font-display font-bold text-trials-danger mb-4">Delete Score?</h2>
+            <p className="text-gray-400 mb-6">This action cannot be undone.</p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 py-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 py-3 bg-trials-danger rounded-lg hover:bg-trials-danger/80 transition-colors font-bold"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

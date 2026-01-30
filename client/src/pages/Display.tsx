@@ -32,7 +32,12 @@ function getScoreColor(points: number | null, isDnf: boolean): string {
 interface DisplayEntry {
   score: Score
   competitor: LeaderboardEntry | undefined
+  // For enduro sections: show enduro stats, for main/kids: show main stats
+  isEnduroSection: boolean
+  sectionsDone: number
+  maxSections: number
   totalPoints: number
+  averageScore: string
 }
 
 export default function Display() {
@@ -84,25 +89,40 @@ export default function Display() {
   }
 
   function getFilteredEntries(): DisplayEntry[] {
-    // Compute total points per competitor from all their scores
-    // Use Number() to handle potential string IDs from JSON
-    const competitorTotals = new Map<number, number>()
-    scores.forEach(score => {
-      if (!score.is_dnf && score.points !== null) {
-        const compId = Number(score.competitor_id)
-        const current = competitorTotals.get(compId) || 0
-        competitorTotals.set(compId, current + (score.points || 0))
-      }
-    })
+    // Max sections: 6 sections × 3 laps = 18 for trial, 2 sections × 3 laps = 6 for enduro
+    const MAX_TRIAL_SECTIONS = 18
+    const MAX_ENDURO_SECTIONS = 6
 
     // Convert ALL scores to display entries (not just one per competitor)
     let entries: DisplayEntry[] = scores.map(score => {
       const compId = Number(score.competitor_id)
       const comp = leaderboard.find(c => Number(c.id) === compId)
+      
+      // Determine if this score is from an enduro section
+      const isEnduroSection = score.section_type === 'enduro'
+      
+      // Use appropriate stats based on section type
+      const sectionsDone = isEnduroSection 
+        ? (comp?.enduro_sections_done || 0)
+        : (comp?.main_sections_done || 0)
+      const maxSections = isEnduroSection ? MAX_ENDURO_SECTIONS : MAX_TRIAL_SECTIONS
+      const totalPoints = isEnduroSection
+        ? (comp?.enduro_total || 0)
+        : (comp?.main_total || 0)
+      
+      // Calculate average score (total / sections done)
+      const averageScore = sectionsDone > 0 
+        ? (totalPoints / sectionsDone).toFixed(1)
+        : '0.0'
+      
       return {
         score,
         competitor: comp,
-        totalPoints: competitorTotals.get(compId) || 0
+        isEnduroSection,
+        sectionsDone,
+        maxSections,
+        totalPoints,
+        averageScore
       }
     })
 
@@ -187,25 +207,25 @@ export default function Display() {
             {/* Min width ensures horizontal scroll on narrow screens */}
             <div className="min-w-[700px]">
               {/* Table Header */}
-              <div className="grid grid-cols-[80px_60px_1fr_120px_60px_70px] md:grid-cols-[120px_80px_1fr_160px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 text-gray-400 font-display text-sm md:text-lg border-b border-gray-700 sticky top-0 bg-trials-darker">
+              <div className="grid grid-cols-[80px_60px_1fr_120px_60px_80px] md:grid-cols-[100px_70px_1fr_140px_70px_110px] gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 text-gray-400 font-display text-sm md:text-lg border-b border-gray-700 sticky top-0 bg-trials-darker">
                 <div>TIME</div>
                 <div>NO.</div>
                 <div>RIDER</div>
                 <div className="text-center">SECTION</div>
                 <div className="text-center">PTS</div>
-                <div className="text-right">TOTAL</div>
+                <div className="text-right">AVG</div>
               </div>
 
               {/* Rows */}
               <div className="divide-y divide-gray-800">
                 {entries.map((entry, index) => {
-                  const { score, competitor, totalPoints } = entry
+                  const { score, competitor, isEnduroSection, sectionsDone, maxSections, averageScore } = entry
                   const isRecent = index === 0
 
                   return (
                     <div
                       key={score.id}
-                      className={`grid grid-cols-[80px_60px_1fr_120px_60px_70px] md:grid-cols-[120px_80px_1fr_160px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 md:py-4 items-center transition-all ${
+                      className={`grid grid-cols-[80px_60px_1fr_120px_60px_80px] md:grid-cols-[100px_70px_1fr_140px_70px_110px] gap-2 md:gap-4 px-3 md:px-4 py-3 md:py-4 items-center transition-all ${
                         isRecent ? 'bg-trials-orange/10 border-l-4 border-trials-orange' : ''
                       }`}
                     >
@@ -218,49 +238,56 @@ export default function Display() {
                       </div>
 
                       {/* Number */}
-                      <div className="font-display text-xl md:text-3xl font-bold text-trials-orange">
+                      <div className="font-display text-xl md:text-2xl font-bold text-trials-orange">
                         #{score.competitor_number}
                       </div>
 
                       {/* Name + Photo + Class */}
                       <div className="flex items-center gap-2 md:gap-4 min-w-0">
-                        <div className="w-10 h-10 md:w-14 md:h-14 rounded-lg bg-gray-700 overflow-hidden flex-shrink-0">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gray-700 overflow-hidden flex-shrink-0">
                           {competitor?.photo_url ? (
                             <img src={competitor.photo_url} alt="" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-500">
-                              <UserIcon className="w-5 h-5 md:w-7 md:h-7" />
+                              <UserIcon className="w-5 h-5 md:w-6 md:h-6" />
                             </div>
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-base md:text-2xl font-semibold truncate">{score.competitor_name}</div>
+                          <div className="text-base md:text-xl font-semibold truncate">{score.competitor_name}</div>
                           {competitor && (
-                            <div className={`text-xs md:text-sm font-display font-bold ${CLASS_COLORS[competitor.primary_class]}`}>
-                              {CLASS_LABELS[competitor.primary_class]}
+                            <div className={`text-xs md:text-sm font-display font-bold ${
+                              isEnduroSection ? CLASS_COLORS['enduro'] : CLASS_COLORS[competitor.primary_class]
+                            }`}>
+                              {isEnduroSection ? 'ENDURO' : CLASS_LABELS[competitor.primary_class]}
                             </div>
                           )}
                         </div>
                       </div>
 
-                      {/* Latest Section */}
+                      {/* Section */}
                       <div className="text-center min-w-0">
-                        <div className="text-sm md:text-xl font-display font-bold truncate">{score.section_name}</div>
+                        <div className="text-sm md:text-lg font-display font-bold truncate">{score.section_name}</div>
                         <div className="text-xs md:text-sm text-gray-400">Lap {score.lap}</div>
                       </div>
 
                       {/* Section Score */}
                       <div className="flex justify-center">
-                        <div className={`w-10 h-10 md:w-14 md:h-14 rounded-lg flex items-center justify-center text-lg md:text-2xl font-display font-bold ${getScoreColor(score.points, !!score.is_dnf)}`}>
+                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-lg flex items-center justify-center text-lg md:text-xl font-display font-bold ${getScoreColor(score.points, !!score.is_dnf)}`}>
                           {score.is_dnf ? 'X' : score.points}
                         </div>
                       </div>
 
-                      {/* Total score */}
-                      <div className={`text-right font-display text-xl md:text-3xl font-bold ${
-                        totalPoints === 0 ? 'text-trials-success' : 'text-white'
-                      }`}>
-                        {totalPoints}
+                      {/* Average + Sections done */}
+                      <div className="text-right">
+                        <div className={`font-display text-lg md:text-2xl font-bold ${
+                          averageScore === '0.0' ? 'text-trials-success' : 'text-white'
+                        }`}>
+                          {averageScore}
+                        </div>
+                        <div className="text-xs md:text-sm text-gray-500">
+                          {sectionsDone}/{maxSections}
+                        </div>
                       </div>
                     </div>
                   )
