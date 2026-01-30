@@ -308,6 +308,8 @@ export function createScore(data) {
     ...score,
     competitor_name: competitor?.name,
     competitor_number: competitor?.number,
+    competitor_class: competitor?.primary_class,
+    competitor_enduro: competitor?.enduro_trial,
     section_name: section?.name,
     section_type: section?.type
   };
@@ -333,6 +335,8 @@ export function updateScore(id, data) {
     ...score,
     competitor_name: competitor?.name,
     competitor_number: competitor?.number,
+    competitor_class: competitor?.primary_class,
+    competitor_enduro: competitor?.enduro_trial,
     section_name: section?.name,
     section_type: section?.type
   };

@@ -11,16 +11,21 @@ export async function sendScoreToSheet(score) {
   
   console.log('Sending score to Google Sheet...');
 
+  // Determine class label for the sheet
+  let classLabel = score.competitor_class || 'unknown';
+  if (score.section_type === 'enduro') {
+    classLabel = 'enduro-trial';
+  }
+  
   const data = {
     competitor_number: score.competitor_number,
     competitor_name: score.competitor_name,
     section_name: score.section_name,
-    section_type: score.section_type,
     lap: score.lap,
     points: score.points,
     is_dnf: score.is_dnf ? true : false,
     created_at: score.created_at,
-    updated_at: score.updated_at || null
+    competitor_class: classLabel
   };
 
   try {
