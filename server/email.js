@@ -1,28 +1,8 @@
-import nodemailer from 'nodemailer';
 import { getSettings } from './db.js';
 
-// Create transporter - configure with your SMTP settings
-// For production, use environment variables
-let transporter = null;
-
-function getTransporter() {
-  if (!transporter) {
-    // Default to a test account or configure via env vars
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      },
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000,
-      socketTimeout: 15000
-    });
-  }
-  return transporter;
-}
+// Use Resend HTTP API (works on cloud platforms that block SMTP)
+// Set RESEND_API_KEY in environment variables
+// Get your API key from https://resend.com
 
 export async function sendScoreEmail(score) {
   const settings = getSettings();
@@ -30,8 +10,7 @@ export async function sendScoreEmail(score) {
   console.log('Email check:', {
     email_backup_enabled: settings.email_backup_enabled,
     email_backup_address: settings.email_backup_address,
-    smtp_user_set: !!process.env.SMTP_USER,
-    smtp_pass_set: !!process.env.SMTP_PASS
+    resend_key_set: !!process.env.RESEND_API_KEY
   });
   
   if (!settings.email_backup_enabled || !settings.email_backup_address) {
@@ -39,8 +18,8 @@ export async function sendScoreEmail(score) {
     return null;
   }
 
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log('Email skipped: SMTP credentials not configured');
+  if (!process.env.RESEND_API_KEY) {
+    console.log('Email skipped: RESEND_API_KEY not configured');
     return null;
   }
   
@@ -48,20 +27,10 @@ export async function sendScoreEmail(score) {
 
   const pointsDisplay = score.is_dnf ? 'DNF' : score.points;
   
-  const mailOptions = {
-    from: process.env.SMTP_USER,
+  const emailData = {
+    from: 'Trial Score <onboarding@resend.dev>',
     to: settings.email_backup_address,
     subject: `[Trial Score] ${score.competitor_name} - ${score.section_name} Lap ${score.lap}`,
-    text: `
-Score Entry:
-------------
-Competitor: #${score.competitor_number} ${score.competitor_name}
-Section: ${score.section_name}
-Lap: ${score.lap}
-Points: ${pointsDisplay}
-Time: ${score.created_at}
-${score.updated_at ? `Updated: ${score.updated_at}` : ''}
-    `.trim(),
     html: `
       <h2>Score Entry</h2>
       <table style="border-collapse: collapse;">
@@ -76,13 +45,27 @@ ${score.updated_at ? `Updated: ${score.updated_at}` : ''}
   };
 
   try {
-    console.log('Attempting to send via SMTP...');
-    const result = await getTransporter().sendMail(mailOptions);
-    console.log('Score email sent:', result.messageId);
+    console.log('Sending via Resend API...');
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(emailData)
+    });
+
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error('Resend API error:', result);
+      return null;
+    }
+    
+    console.log('Score email sent:', result.id);
     return result;
   } catch (error) {
     console.error('Failed to send score email:', error.message);
-    console.error('Full error:', error);
     return null;
   }
 }
