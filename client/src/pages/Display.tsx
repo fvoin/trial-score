@@ -294,8 +294,10 @@ export default function Display() {
                       </div>
 
                       {/* Rank in class */}
-                      <div className="text-center font-display text-xl md:text-2xl font-bold text-trials-orange">
-                        {rank > 0 ? rank : '-'}
+                      <div className="flex justify-center items-center">
+                        <div className="w-8 md:w-10 text-center font-display text-xl md:text-2xl font-bold text-trials-orange tabular-nums">
+                          {rank > 0 ? rank : '-'}
+                        </div>
                       </div>
 
                       {/* Photo + Name + Number + Class */}
