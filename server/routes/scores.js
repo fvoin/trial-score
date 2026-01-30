@@ -11,7 +11,7 @@ import {
   getLeaderboard
 } from '../db.js';
 import { broadcastScoreUpdate } from '../socket.js';
-import { sendScoreEmail } from '../email.js';
+import { sendScoreToSheet } from '../sheets.js';
 
 const router = express.Router();
 
@@ -112,8 +112,8 @@ router.post('/', async (req, res) => {
     const io = req.app.get('io');
     broadcastScoreUpdate(io, score);
     
-    // Send email backup asynchronously
-    sendScoreEmail(score).catch(console.error);
+    // Send to Google Sheet backup asynchronously
+    sendScoreToSheet(score).catch(console.error);
     
     res.status(201).json(score);
   } catch (error) {
@@ -134,8 +134,8 @@ router.put('/:id', async (req, res) => {
     const io = req.app.get('io');
     broadcastScoreUpdate(io, score);
     
-    // Send email backup for correction
-    sendScoreEmail(score).catch(console.error);
+    // Send to Google Sheet backup asynchronously
+    sendScoreToSheet(score).catch(console.error);
     
     res.json(score);
   } catch (error) {
