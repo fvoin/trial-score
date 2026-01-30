@@ -720,27 +720,6 @@ export default function Manager() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Email Backup Address</label>
-                <input
-                  type="email"
-                  value={settings.email_backup_address || ''}
-                  onChange={e => setSettings({ ...settings, email_backup_address: e.target.value })}
-                  placeholder="scores@example.com"
-                  className="w-full px-4 py-3 bg-trials-darker border border-gray-700 rounded-lg focus:border-trials-orange focus:outline-none"
-                />
-              </div>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.email_backup_enabled === 1}
-                  onChange={e => setSettings({ ...settings, email_backup_enabled: e.target.checked ? 1 : 0 })}
-                  className="w-5 h-5 rounded border-gray-600 bg-trials-darker text-trials-orange focus:ring-trials-orange"
-                />
-                <span>Enable email backup for each score</span>
-              </label>
-
               {/* Export/Import buttons */}
               <div className="border-t border-gray-700 pt-4 mt-4">
                 <label className="block text-sm text-gray-400 mb-2">Data Backup</label>
