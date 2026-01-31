@@ -888,7 +888,7 @@ function StandingsTable({
                     <span className={`font-display font-bold text-xl ${total === 0 ? 'text-trials-success' : ''}`}>
                       {total}
                     </span>
-                    {dnf > 0 && <span className="text-xs text-gray-500 ml-1">({dnf}×DNF)</span>}
+                    {dnf > 0 && <span className="text-xs text-gray-500 ml-1">({dnf}×DNS)</span>}
                   </td>
                 </tr>
               )

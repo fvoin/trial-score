@@ -106,7 +106,7 @@ router.post('/', async (req, res) => {
       competitor_id,
       section_id,
       lap,
-      points: is_dnf ? null : points,
+      points: points,
       is_dnf: is_dnf ? 1 : 0
     });
     
@@ -128,7 +128,7 @@ router.put('/:id', async (req, res) => {
     const { points, is_dnf } = req.body;
     
     const score = updateScore(req.params.id, {
-      points: is_dnf ? null : points,
+      points: points,
       is_dnf: is_dnf ? 1 : 0
     });
     

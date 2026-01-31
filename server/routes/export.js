@@ -52,7 +52,7 @@ router.get('/csv', (req, res) => {
     });
     
     // Build CSV
-    const headers = ['Rank', 'Number', 'Name', 'Class', 'Sections Done', 'Total Points', 'DNFs'];
+    const headers = ['Rank', 'Number', 'Name', 'Class', 'Sections Done', 'Total Points', 'DNS'];
     const rows = ranked.map(e => [
       e.rank,
       e.number,
@@ -68,7 +68,7 @@ router.get('/csv', (req, res) => {
     if (enduroEntries.length > 0) {
       rows.push([]);
       rows.push(['ENDURO TRIAL']);
-      rows.push(['Rank', 'Number', 'Name', 'Enduro Sections', 'Enduro Total', 'DNFs']);
+      rows.push(['Rank', 'Number', 'Name', 'Enduro Sections', 'Enduro Total', 'DNS']);
       
       const enduroSorted = [...enduroEntries].sort((a, b) => a.enduro_total - b.enduro_total);
       enduroSorted.forEach((e, i) => {

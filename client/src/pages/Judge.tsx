@@ -25,7 +25,7 @@ const SCORE_OPTIONS = [
   { value: 2, label: '2', className: 'score-btn-2' },
   { value: 3, label: '3', className: 'score-btn-3' },
   { value: 5, label: '5', className: 'score-btn-5' },
-  { value: -1, label: 'DNF', className: 'score-btn-dnf' }
+  { value: 20, label: 'DNS', className: 'score-btn-dnf', isDns: true }
 ]
 
 function getScoreColor(points: number | null, isDnf: boolean): string {
@@ -226,7 +226,7 @@ export default function Judge() {
     }
   }
 
-  async function submitScore(points: number, isDnf: boolean) {
+  async function submitScore(points: number, isDns: boolean) {
     if (!scoringCompetitor || !selectedSection) return
     
     setSubmitting(true)
@@ -234,8 +234,8 @@ export default function Judge() {
       await createScore({
         competitor_id: scoringCompetitor.id,
         section_id: selectedSection,
-        points: isDnf ? undefined : points,
-        is_dnf: isDnf
+        points: points,
+        is_dnf: isDns
       })
       setScoringCompetitor(null)
       loadSectionScores()
@@ -246,14 +246,14 @@ export default function Judge() {
     }
   }
 
-  async function submitEditScore(points: number, isDnf: boolean) {
+  async function submitEditScore(points: number, isDns: boolean) {
     if (!editingScore) return
     
     setSubmitting(true)
     try {
       await updateScore(editingScore.id, {
-        points: isDnf ? undefined : points,
-        is_dnf: isDnf
+        points: points,
+        is_dnf: isDns
       })
       setEditingScore(null)
       loadSectionScores()
@@ -466,7 +466,7 @@ export default function Judge() {
 
                   {/* Score */}
                   <div className={`w-10 h-10 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center font-display text-lg sm:text-2xl font-bold shrink-0 ${getScoreColor(score.points, !!score.is_dnf)}`}>
-                    {score.is_dnf ? 'DNF' : score.points}
+                    {score.is_dnf ? 'DNS' : score.points}
                   </div>
 
                   {/* Actions */}
@@ -593,7 +593,7 @@ export default function Judge() {
               {SCORE_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
-                  onClick={() => submitScore(opt.value, opt.value === -1)}
+                  onClick={() => submitScore(opt.value, 'isDns' in opt && opt.isDns)}
                   disabled={submitting}
                   className={`score-btn ${opt.className} ${submitting ? 'opacity-50' : ''}`}
                 >
@@ -623,7 +623,7 @@ export default function Judge() {
             </div>
 
             <div className="mb-2 text-sm text-gray-500">
-              Current: {editingScore.is_dnf ? 'DNF' : editingScore.points}
+              Current: {editingScore.is_dnf ? 'DNS' : editingScore.points}
             </div>
 
             {/* Score buttons */}
@@ -631,7 +631,7 @@ export default function Judge() {
               {SCORE_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
-                  onClick={() => submitEditScore(opt.value, opt.value === -1)}
+                  onClick={() => submitEditScore(opt.value, 'isDns' in opt && opt.isDns)}
                   disabled={submitting}
                   className={`score-btn ${opt.className} ${submitting ? 'opacity-50' : ''}`}
                 >

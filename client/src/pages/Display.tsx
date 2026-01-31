@@ -110,7 +110,7 @@ export default function Display() {
     
     const sections = relevantScores.length
     const total = relevantScores.reduce((sum, s) => {
-      if (s.is_dnf || s.points === null) return sum
+      if (s.points === null) return sum
       return sum + s.points
     }, 0)
     const avg = sections > 0 ? total / sections : 0

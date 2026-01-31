@@ -283,7 +283,7 @@ export function createScore(data) {
     competitor_id: parseInt(data.competitor_id),
     section_id: parseInt(data.section_id),
     lap: data.lap,
-    points: data.is_dnf ? null : data.points,
+    points: data.points,
     is_dnf: data.is_dnf ? 1 : 0,
     created_at: new Date().toISOString(),
     updated_at: null
@@ -322,7 +322,7 @@ export function updateScore(id, data) {
   
   db.scores[index] = {
     ...db.scores[index],
-    points: data.is_dnf ? null : data.points,
+    points: data.points,
     is_dnf: data.is_dnf ? 1 : 0,
     updated_at: new Date().toISOString()
   };
@@ -374,14 +374,16 @@ export function getLeaderboard() {
         mainSectionsDone++;
         if (s.is_dnf) {
           mainDnfCount++;
-        } else if (s.points !== null) {
+        }
+        if (s.points !== null) {
           mainTotal += s.points;
         }
       } else if (section.type === 'enduro') {
         enduroSectionsDone++;
         if (s.is_dnf) {
           enduroDnfCount++;
-        } else if (s.points !== null) {
+        }
+        if (s.points !== null) {
           enduroTotal += s.points;
         }
       }
