@@ -14,6 +14,7 @@ import {
   getExportJsonUrl,
   getExportCsvUrl,
   importJson,
+  deleteAllScores,
   type Competitor,
   type Settings,
   type Score,
@@ -216,6 +217,28 @@ export default function Manager() {
 
   const [savingSettings, setSavingSettings] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0) // 0=none, 1=first confirm, 2=deleting
+  
+  async function handleDeleteAllScores() {
+    if (deleteConfirmStep === 0) {
+      setDeleteConfirmStep(1)
+      return
+    }
+    if (deleteConfirmStep === 1) {
+      setDeleteConfirmStep(2)
+      try {
+        await deleteAllScores()
+        setAllScores([])
+        loadData() // Reload to update leaderboard
+        setDeleteConfirmStep(0)
+        alert('All scores deleted successfully')
+      } catch (err) {
+        console.error('Delete all scores error:', err)
+        setError('Failed to delete all scores')
+        setDeleteConfirmStep(0)
+      }
+    }
+  }
 
   async function handleImportJson(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -749,6 +772,32 @@ export default function Manager() {
                     className="hidden"
                   />
                 </label>
+              </div>
+
+              {/* Danger Zone */}
+              <div className="border-t border-red-900/50 pt-4 mt-4">
+                <label className="block text-sm text-red-400 mb-2">Danger Zone</label>
+                <button
+                  type="button"
+                  onClick={handleDeleteAllScores}
+                  onBlur={() => deleteConfirmStep === 1 && setDeleteConfirmStep(0)}
+                  disabled={deleteConfirmStep === 2}
+                  className={`w-full py-2 rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${
+                    deleteConfirmStep === 0
+                      ? 'bg-red-900/30 border border-red-900 text-red-400 hover:bg-red-900/50'
+                      : deleteConfirmStep === 1
+                      ? 'bg-red-600 border border-red-500 text-white animate-pulse'
+                      : 'bg-red-900/50 text-red-300 opacity-50'
+                  }`}
+                >
+                  <TrashIcon className="w-4 h-4" />
+                  {deleteConfirmStep === 0 && 'Delete All Scores'}
+                  {deleteConfirmStep === 1 && 'Click again to confirm!'}
+                  {deleteConfirmStep === 2 && 'Deleting...'}
+                </button>
+                {deleteConfirmStep === 1 && (
+                  <p className="text-xs text-red-400 mt-1 text-center">This will permanently delete all scores. Cannot be undone.</p>
+                )}
               </div>
 
               <div className="flex gap-3 pt-4">

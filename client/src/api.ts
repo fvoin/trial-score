@@ -166,6 +166,13 @@ export async function deleteScore(id: number): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete score');
 }
 
+export async function deleteAllScores(): Promise<void> {
+  const res = await fetch(`${API_BASE}/scores/all`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error('Failed to delete all scores');
+}
+
 // Leaderboard
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   const res = await fetch(`${API_BASE}/scores/leaderboard`);

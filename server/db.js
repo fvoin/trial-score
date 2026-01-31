@@ -347,6 +347,11 @@ export function deleteScore(id) {
   saveDb(db);
 }
 
+export function deleteAllScores() {
+  db.scores = [];
+  saveDb(db);
+}
+
 // Leaderboard query
 export function getLeaderboard() {
   return db.competitors.map(c => {

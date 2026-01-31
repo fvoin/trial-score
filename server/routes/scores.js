@@ -7,6 +7,7 @@ import {
   createScore,
   updateScore,
   deleteScore,
+  deleteAllScores,
   getSections,
   getLeaderboard
 } from '../db.js';
@@ -138,6 +139,20 @@ router.put('/:id', async (req, res) => {
     sendScoreToSheet(score).catch(console.error);
     
     res.json(score);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// DELETE all scores (must be before /:id route)
+router.delete('/all', (req, res) => {
+  try {
+    deleteAllScores();
+    
+    const io = req.app.get('io');
+    io.emit('leaderboard', getLeaderboard());
+    
+    res.status(204).send();
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
