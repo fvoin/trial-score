@@ -593,7 +593,7 @@ export default function Judge() {
               {SCORE_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
-                  onClick={() => submitScore(opt.value, 'isDns' in opt && opt.isDns)}
+                  onClick={() => submitScore(opt.value, 'isDns' in opt && !!opt.isDns)}
                   disabled={submitting}
                   className={`score-btn ${opt.className} ${submitting ? 'opacity-50' : ''}`}
                 >
@@ -631,7 +631,7 @@ export default function Judge() {
               {SCORE_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
-                  onClick={() => submitEditScore(opt.value, 'isDns' in opt && opt.isDns)}
+                  onClick={() => submitEditScore(opt.value, 'isDns' in opt && !!opt.isDns)}
                   disabled={submitting}
                   className={`score-btn ${opt.className} ${submitting ? 'opacity-50' : ''}`}
                 >
