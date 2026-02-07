@@ -168,15 +168,15 @@ export default function Judge() {
 
     // For enduro sections, only show competitors registered for enduro
     if (section.type === 'enduro') {
-      filtered = filtered.filter(c => c.enduro_trial === 1)
+      filtered = filtered.filter(c => c.enduro_trial === 1 || c.primary_class === 'enduro-trial')
     }
     // For kids sections, only show kids class competitors
     else if (section.type === 'kids') {
       filtered = filtered.filter(c => c.primary_class === 'kids')
     }
-    // For main sections, exclude kids (they have their own sections)
+    // For main sections, exclude kids and enduro-trial-only riders
     else if (section.type === 'main') {
-      filtered = filtered.filter(c => c.primary_class !== 'kids')
+      filtered = filtered.filter(c => c.primary_class !== 'kids' && c.primary_class !== 'enduro-trial')
     }
 
     // Apply search filter
@@ -541,7 +541,7 @@ export default function Judge() {
                       </span>
                       <span className="text-base sm:text-lg font-semibold truncate">{comp.name}</span>
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-400 capitalize">{comp.primary_class}</div>
+                    <div className="text-xs sm:text-sm text-gray-400 capitalize">{comp.primary_class === 'enduro-trial' ? 'Enduro Trial' : comp.primary_class}</div>
                   </div>
 
                   {/* Score indicators - show actual scores */}

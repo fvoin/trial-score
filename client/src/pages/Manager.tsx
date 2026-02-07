@@ -26,7 +26,8 @@ import PinModal, { getPinCookie } from '../components/PinModal'
 const CLASSES = [
   { value: 'kids', label: 'Kids' },
   { value: 'clubman', label: 'Clubman' },
-  { value: 'advanced', label: 'Advanced' }
+  { value: 'advanced', label: 'Advanced' },
+  { value: 'enduro-trial', label: 'Enduro Trial (only)' }
 ]
 
 type ClassFilter = 'all' | 'kids' | 'clubman' | 'advanced' | 'enduro'
@@ -138,7 +139,7 @@ export default function Manager() {
 
   function getFilteredCompetitors(): Competitor[] {
     if (classFilter === 'all') return competitors
-    if (classFilter === 'enduro') return competitors.filter(c => c.enduro_trial === 1)
+    if (classFilter === 'enduro') return competitors.filter(c => c.enduro_trial === 1 || c.primary_class === 'enduro-trial')
     return competitors.filter(c => c.primary_class === classFilter)
   }
 
@@ -182,11 +183,12 @@ export default function Manager() {
     e.preventDefault()
     setError('')
 
+    const isEnduroOnly = primaryClass === 'enduro-trial'
     const formData = new FormData()
     formData.append('number', number)
     formData.append('name', name)
     formData.append('primary_class', primaryClass)
-    formData.append('enduro_trial', enduroTrial ? 'true' : 'false')
+    formData.append('enduro_trial', (isEnduroOnly || enduroTrial) ? 'true' : 'false')
     if (photoFile) {
       formData.append('photo', photoFile)
     }
@@ -286,37 +288,59 @@ export default function Manager() {
     }
   }
 
-  function getRankedByClass(cls: string): (LeaderboardEntry & { rank: number })[] {
+  function getRankedByClass(cls: string): (LeaderboardEntry & { rank: number; completed: boolean })[] {
     let filtered: LeaderboardEntry[]
     
     if (cls === 'enduro') {
-      filtered = leaderboard.filter(c => c.enduro_trial === 1)
+      filtered = leaderboard.filter(c => c.enduro_trial === 1 || c.primary_class === 'enduro-trial')
     } else {
       filtered = leaderboard.filter(c => c.primary_class === cls)
     }
 
     const isEnduro = cls === 'enduro'
-    const sorted = [...filtered].sort((a, b) => {
+    const maxSections = isEnduro ? 6 : (cls === 'kids' ? 9 : 18)
+
+    // Split into completed and incomplete
+    const completedRiders = filtered.filter(c => {
+      const sections = isEnduro ? c.enduro_sections_done : c.main_sections_done
+      return sections >= maxSections
+    })
+    const incompleteRiders = filtered.filter(c => {
+      const sections = isEnduro ? c.enduro_sections_done : c.main_sections_done
+      return sections < maxSections
+    })
+
+    // Sort each group by total points (lowest first)
+    const sortFn = (a: LeaderboardEntry, b: LeaderboardEntry) => {
       const aTotal = isEnduro ? a.enduro_total : a.main_total
       const bTotal = isEnduro ? b.enduro_total : b.main_total
       if (aTotal !== bTotal) return aTotal - bTotal
       const aSections = isEnduro ? a.enduro_sections_done : a.main_sections_done
       const bSections = isEnduro ? b.enduro_sections_done : b.main_sections_done
       return bSections - aSections
-    })
+    }
+    completedRiders.sort(sortFn)
+    incompleteRiders.sort(sortFn)
 
+    // Rank completed riders, then append incomplete riders without rank
     let currentRank = 1
-    return sorted.map((entry, index) => {
+    const rankedCompleted = completedRiders.map((entry, index) => {
       if (index > 0) {
-        const prev = sorted[index - 1]
+        const prev = completedRiders[index - 1]
         const currentTotal = isEnduro ? entry.enduro_total : entry.main_total
         const prevTotal = isEnduro ? prev.enduro_total : prev.main_total
         if (currentTotal !== prevTotal) {
           currentRank = index + 1
         }
       }
-      return { ...entry, rank: currentRank }
+      return { ...entry, rank: currentRank, completed: true }
     })
+
+    const rankedIncomplete = incompleteRiders.map(entry => ({
+      ...entry, rank: 0, completed: false
+    }))
+
+    return [...rankedCompleted, ...rankedIncomplete]
   }
 
   // Show PIN modal if needed
@@ -390,7 +414,7 @@ export default function Manager() {
               {cls === 'all' ? 'ALL' : cls === 'enduro' ? 'END' : cls.substring(0, 3).toUpperCase()}
               <span className="ml-1 sm:ml-2 text-xs opacity-70">
                 ({cls === 'all' ? competitors.length : 
-                  cls === 'enduro' ? competitors.filter(c => c.enduro_trial === 1).length :
+                  cls === 'enduro' ? competitors.filter(c => c.enduro_trial === 1 || c.primary_class === 'enduro-trial').length :
                   competitors.filter(c => c.primary_class === cls).length})
               </span>
             </button>
@@ -446,17 +470,25 @@ export default function Manager() {
                     <span className="text-base sm:text-xl font-semibold truncate">{comp.name}</span>
                   </div>
                   <div className="flex gap-1 sm:gap-2 mt-1 flex-wrap">
-                    <span className={`px-2 py-0.5 text-xs sm:text-sm rounded capitalize ${
-                      comp.primary_class === 'kids' ? 'bg-yellow-400/20 text-yellow-400' :
-                      comp.primary_class === 'advanced' ? 'bg-red-500/20 text-red-500' :
-                      'bg-emerald-500/20 text-emerald-500'
-                    }`}>
-                      {comp.primary_class}
-                    </span>
-                    {comp.enduro_trial === 1 && (
+                    {comp.primary_class === 'enduro-trial' ? (
                       <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs sm:text-sm rounded">
-                        Enduro
+                        Enduro Trial
                       </span>
+                    ) : (
+                      <>
+                        <span className={`px-2 py-0.5 text-xs sm:text-sm rounded capitalize ${
+                          comp.primary_class === 'kids' ? 'bg-yellow-400/20 text-yellow-400' :
+                          comp.primary_class === 'advanced' ? 'bg-red-500/20 text-red-500' :
+                          'bg-emerald-500/20 text-emerald-500'
+                        }`}>
+                          {comp.primary_class}
+                        </span>
+                        {comp.enduro_trial === 1 && (
+                          <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs sm:text-sm rounded">
+                            Enduro
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -632,16 +664,18 @@ export default function Manager() {
                 </select>
               </div>
 
-              {/* Enduro Trial */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enduroTrial}
-                  onChange={e => setEnduroTrial(e.target.checked)}
-                  className="w-5 h-5 rounded border-gray-600 bg-trials-darker text-trials-orange focus:ring-trials-orange"
-                />
-                <span>Also competing in Enduro Trial</span>
-              </label>
+              {/* Enduro Trial - only show for non-enduro-trial classes */}
+              {primaryClass !== 'enduro-trial' && (
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enduroTrial}
+                    onChange={e => setEnduroTrial(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-600 bg-trials-darker text-trials-orange focus:ring-trials-orange"
+                  />
+                  <span>Also competing in Enduro Trial</span>
+                </label>
+              )}
 
               {/* Photo */}
               <div>
@@ -832,7 +866,7 @@ function StandingsTable({
   isEnduro 
 }: { 
   title: string; 
-  entries: (LeaderboardEntry & { rank: number })[]; 
+  entries: (LeaderboardEntry & { rank: number; completed: boolean })[]; 
   colorClass: string;
   isEnduro: boolean;
 }) {
@@ -846,6 +880,8 @@ function StandingsTable({
   }
 
   const maxSections = isEnduro ? 6 : (entries[0]?.primary_class === 'kids' ? 9 : 18)
+  const hasCompleted = entries.some(e => e.completed)
+  const hasIncomplete = entries.some(e => !e.completed)
 
   return (
     <div>
@@ -862,20 +898,24 @@ function StandingsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {entries.map(entry => {
+            {entries.map((entry, idx) => {
               const total = isEnduro ? entry.enduro_total : entry.main_total
               const sections = isEnduro ? entry.enduro_sections_done : entry.main_sections_done
               const dnf = isEnduro ? entry.enduro_dnf_count : entry.main_dnf_count
 
+              // Show separator between completed and incomplete riders
+              const showSeparator = hasCompleted && hasIncomplete && !entry.completed && (idx === 0 || entries[idx - 1].completed)
+
               return (
-                <tr key={entry.id} className="hover:bg-gray-800/50">
+                <tr key={entry.id} className={`hover:bg-gray-800/50 ${!entry.completed ? 'opacity-60' : ''} ${showSeparator ? 'border-t-2 border-dashed border-gray-600' : ''}`}>
                   <td className={`px-4 py-3 font-display font-bold text-lg ${
+                    !entry.completed ? 'text-gray-600' :
                     entry.rank === 1 ? 'text-yellow-400' :
                     entry.rank === 2 ? 'text-gray-300' :
                     entry.rank === 3 ? 'text-amber-600' :
                     'text-gray-500'
                   }`}>
-                    {entry.rank}
+                    {entry.completed ? entry.rank : '-'}
                   </td>
                   <td className="px-4 py-3 font-display font-bold text-trials-orange">
                     #{entry.number}
@@ -885,7 +925,7 @@ function StandingsTable({
                     {sections}/{maxSections}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`font-display font-bold text-xl ${total === 0 ? 'text-trials-success' : ''}`}>
+                    <span className={`font-display font-bold text-xl ${total === 0 && entry.completed ? 'text-trials-success' : ''}`}>
                       {total}
                     </span>
                     {dnf > 0 && <span className="text-xs text-gray-500 ml-1">({dnf}×DNS)</span>}

@@ -23,68 +23,137 @@ router.get('/json', (req, res) => {
   }
 });
 
-// GET export standings as CSV
+// GET export standings as CSV with detailed section results
 router.get('/csv', (req, res) => {
   try {
     const leaderboard = getLeaderboard();
     const settings = getSettings();
-    
-    // Sort by class then by total
-    const sorted = [...leaderboard].sort((a, b) => {
-      if (a.primary_class !== b.primary_class) {
-        const order = ['kids', 'clubman', 'advanced'];
-        return order.indexOf(a.primary_class) - order.indexOf(b.primary_class);
-      }
-      return a.main_total - b.main_total;
-    });
-    
-    // Add rank within class
-    let currentClass = '';
-    let rank = 0;
-    const ranked = sorted.map(entry => {
-      if (entry.primary_class !== currentClass) {
-        currentClass = entry.primary_class;
-        rank = 1;
-      } else {
-        rank++;
-      }
-      return { ...entry, rank };
-    });
-    
-    // Build CSV
-    const headers = ['Rank', 'Number', 'Name', 'Class', 'Sections Done', 'Total Points', 'DNS'];
-    const rows = ranked.map(e => [
-      e.rank,
-      e.number,
-      `"${e.name}"`,
-      e.primary_class.toUpperCase(),
-      e.main_sections_done,
-      e.main_total,
-      e.main_dnf_count
-    ]);
-    
-    // Add enduro section if any enduro competitors
-    const enduroEntries = leaderboard.filter(e => e.enduro_trial);
-    if (enduroEntries.length > 0) {
-      rows.push([]);
-      rows.push(['ENDURO TRIAL']);
-      rows.push(['Rank', 'Number', 'Name', 'Enduro Sections', 'Enduro Total', 'DNS']);
-      
-      const enduroSorted = [...enduroEntries].sort((a, b) => a.enduro_total - b.enduro_total);
-      enduroSorted.forEach((e, i) => {
-        rows.push([i + 1, e.number, `"${e.name}"`, e.enduro_sections_done, e.enduro_total, e.enduro_dnf_count]);
+    const sections = getSections();
+    const allScores = getScores();
+    const LAPS = 3;
+
+    // Separate section types
+    const mainSections = sections.filter(s => s.type === 'main');
+    const kidsSections = sections.filter(s => s.type === 'kids');
+    const enduroSections = sections.filter(s => s.type === 'enduro');
+
+    // Helper: build section columns and rows for a group of riders
+    function buildClassTable(classLabel, riders, classSections, isEnduro) {
+      if (riders.length === 0) return [];
+
+      const maxSections = classSections.length * LAPS;
+
+      // Separate completed vs incomplete
+      const completed = riders.filter(r => {
+        const done = isEnduro ? r.enduro_sections_done : r.main_sections_done;
+        return done >= maxSections;
       });
+      const incomplete = riders.filter(r => {
+        const done = isEnduro ? r.enduro_sections_done : r.main_sections_done;
+        return done < maxSections;
+      });
+
+      // Sort each group by total (lowest first)
+      const sortFn = (a, b) => {
+        const aTotal = isEnduro ? a.enduro_total : a.main_total;
+        const bTotal = isEnduro ? b.enduro_total : b.main_total;
+        return aTotal - bTotal;
+      };
+      completed.sort(sortFn);
+      incomplete.sort(sortFn);
+
+      // Assign ranks to completed riders
+      let rank = 1;
+      const rankedCompleted = completed.map((entry, i) => {
+        if (i > 0) {
+          const prevTotal = isEnduro ? completed[i - 1].enduro_total : completed[i - 1].main_total;
+          const curTotal = isEnduro ? entry.enduro_total : entry.main_total;
+          if (curTotal !== prevTotal) rank = i + 1;
+        }
+        return { ...entry, rank };
+      });
+
+      const rankedIncomplete = incomplete.map(entry => ({ ...entry, rank: '-' }));
+      const allRiders = [...rankedCompleted, ...rankedIncomplete];
+
+      // Build section column headers: Section1 L1, Section1 L2, Section1 L3, Section2 L1, ...
+      const sectionHeaders = [];
+      for (const sec of classSections) {
+        for (let lap = 1; lap <= LAPS; lap++) {
+          sectionHeaders.push(`${sec.name} L${lap}`);
+        }
+      }
+
+      const rows = [];
+      rows.push([classLabel.toUpperCase()]);
+      rows.push(['Rank', 'Number', 'Name', ...sectionHeaders, 'Total']);
+
+      for (const rider of allRiders) {
+        const row = [rider.rank, rider.number, `"${rider.name}"`];
+
+        let total = 0;
+        for (const sec of classSections) {
+          for (let lap = 1; lap <= LAPS; lap++) {
+            // Find score for this rider, section, lap
+            const score = allScores.find(s => 
+              s.competitor_id === rider.id && 
+              s.section_id === sec.id && 
+              s.lap === lap
+            );
+
+            if (!score || score.points === null) {
+              // No score or DNS -> 20
+              row.push(20);
+              total += 20;
+            } else {
+              row.push(score.points);
+              total += score.points;
+            }
+          }
+        }
+        row.push(total);
+        rows.push(row);
+      }
+
+      return rows;
     }
-    
+
+    // Build CSV content
+    const csvRows = [];
     const eventName = settings.event_name || 'Trial';
-    const csv = [
-      `${eventName} - Results`,
-      `Exported: ${new Date().toLocaleString()}`,
-      '',
-      headers.join(','),
-      ...rows.map(r => r.join(','))
-    ].join('\n');
-    
+    csvRows.push([`${eventName} - Results`]);
+    csvRows.push([`Exported: ${new Date().toLocaleString()}`]);
+    csvRows.push([]);
+
+    // Kids
+    const kidsRiders = leaderboard.filter(c => c.primary_class === 'kids');
+    if (kidsRiders.length > 0) {
+      csvRows.push(...buildClassTable('Kids', kidsRiders, kidsSections, false));
+      csvRows.push([]);
+    }
+
+    // Clubman
+    const clubmanRiders = leaderboard.filter(c => c.primary_class === 'clubman');
+    if (clubmanRiders.length > 0) {
+      csvRows.push(...buildClassTable('Clubman', clubmanRiders, mainSections, false));
+      csvRows.push([]);
+    }
+
+    // Advanced
+    const advancedRiders = leaderboard.filter(c => c.primary_class === 'advanced');
+    if (advancedRiders.length > 0) {
+      csvRows.push(...buildClassTable('Advanced', advancedRiders, mainSections, false));
+      csvRows.push([]);
+    }
+
+    // Enduro Trial
+    const enduroRiders = leaderboard.filter(c => c.enduro_trial === 1 || c.primary_class === 'enduro-trial');
+    if (enduroRiders.length > 0) {
+      csvRows.push(...buildClassTable('Enduro Trial', enduroRiders, enduroSections, true));
+    }
+
+    const csv = csvRows.map(r => r.join(',')).join('\n');
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="trial-standings-${Date.now()}.csv"`);
     res.send(csv);

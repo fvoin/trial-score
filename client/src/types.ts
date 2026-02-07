@@ -1,4 +1,4 @@
-export type CompetitorClass = 'kids' | 'clubman' | 'advanced';
+export type CompetitorClass = 'kids' | 'clubman' | 'advanced' | 'enduro-trial';
 
 export interface Competitor {
   id: number;

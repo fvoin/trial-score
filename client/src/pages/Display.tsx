@@ -161,7 +161,7 @@ export default function Display() {
         const cId = Number(c.id)
         // Check if competitor belongs to this ranking class
         const belongsToClass = isEnduroSection 
-          ? c.enduro_trial === 1 
+          ? (c.enduro_trial === 1 || c.primary_class === 'enduro-trial')
           : c.primary_class === rankClass
         
         if (belongsToClass) {
@@ -193,7 +193,7 @@ export default function Display() {
       entries = entries.filter(entry => {
         if (!entry.competitor) return false
         if (classFilter === 'enduro') {
-          return entry.competitor.enduro_trial === 1
+          return entry.competitor.enduro_trial === 1 || entry.competitor.primary_class === 'enduro-trial'
         }
         return entry.competitor.primary_class === classFilter
       })

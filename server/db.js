@@ -235,6 +235,8 @@ export function canStartNewLap(competitorId, sectionId) {
   // For main sections (or if no section specified), check based on primary class
   else if (competitor.primary_class === 'kids') {
     requiredSections = allSections.filter(s => s.type === 'kids');
+  } else if (competitor.primary_class === 'enduro-trial') {
+    requiredSections = allSections.filter(s => s.type === 'enduro');
   } else {
     requiredSections = allSections.filter(s => s.type === 'main');
   }
