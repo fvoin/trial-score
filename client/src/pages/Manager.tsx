@@ -8,6 +8,7 @@ import {
   getSettings,
   updateSettings,
   getScores,
+  getSections,
   getLeaderboard,
   getAuthRequired,
   verifyPin,
@@ -18,6 +19,7 @@ import {
   type Competitor,
   type Settings,
   type Score,
+  type Section,
   type LeaderboardEntry
 } from '../api'
 import { UserIcon, SettingsIcon, PlusIcon, CameraIcon, UploadIcon, TrashIcon, HistoryIcon, FileJsonIcon, FileSpreadsheetIcon, DownloadIcon, LoaderIcon } from '../components/Icons'
@@ -65,6 +67,7 @@ export default function Manager() {
 
   // Log data
   const [allScores, setAllScores] = useState<Score[]>([])
+  const [allSections, setAllSections] = useState<Section[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [logTab, setLogTab] = useState<'timeline' | 'standings'>('timeline')
 
@@ -128,8 +131,9 @@ export default function Manager() {
 
   async function openLog() {
     try {
-      const [scores, lb] = await Promise.all([getScores(), getLeaderboard()])
+      const [scores, secs, lb] = await Promise.all([getScores(), getSections(), getLeaderboard()])
       setAllScores(scores)
+      setAllSections(secs)
       setLeaderboard(lb)
       setShowLog(true)
     } catch {
@@ -584,6 +588,8 @@ export default function Manager() {
                     entries={getRankedByClass('kids')} 
                     colorClass="text-yellow-400"
                     isEnduro={false}
+                    sections={allSections.filter(s => s.type === 'kids')}
+                    scores={allScores}
                   />
                   
                   {/* Clubman standings */}
@@ -592,6 +598,8 @@ export default function Manager() {
                     entries={getRankedByClass('clubman')} 
                     colorClass="text-emerald-500"
                     isEnduro={false}
+                    sections={allSections.filter(s => s.type === 'main')}
+                    scores={allScores}
                   />
                   
                   {/* Advanced standings */}
@@ -600,6 +608,8 @@ export default function Manager() {
                     entries={getRankedByClass('advanced')} 
                     colorClass="text-red-500"
                     isEnduro={false}
+                    sections={allSections.filter(s => s.type === 'main')}
+                    scores={allScores}
                   />
                   
                   {/* Enduro standings */}
@@ -608,6 +618,8 @@ export default function Manager() {
                     entries={getRankedByClass('enduro')} 
                     colorClass="text-gray-300"
                     isEnduro={true}
+                    sections={allSections.filter(s => s.type === 'enduro')}
+                    scores={allScores}
                   />
                 </div>
               )}
@@ -858,18 +870,34 @@ export default function Manager() {
   )
 }
 
-// Standings table component
+function getScoreCellColor(points: number): string {
+  if (points === 0) return 'bg-trials-success/20 text-trials-success'
+  if (points === 1) return 'bg-emerald-400/20 text-emerald-400'
+  if (points === 2) return 'bg-yellow-400/20 text-yellow-400'
+  if (points === 3) return 'bg-orange-500/20 text-orange-500'
+  if (points === 5) return 'bg-red-500/20 text-red-500'
+  if (points === 20) return 'bg-gray-700/50 text-gray-500'
+  return 'text-gray-400'
+}
+
+// Standings table component with detailed section scores
 function StandingsTable({ 
   title, 
   entries, 
   colorClass,
-  isEnduro 
+  isEnduro,
+  sections,
+  scores
 }: { 
   title: string; 
   entries: (LeaderboardEntry & { rank: number; completed: boolean })[]; 
   colorClass: string;
   isEnduro: boolean;
+  sections: Section[];
+  scores: Score[];
 }) {
+  const LAPS = 3
+
   if (entries.length === 0) {
     return (
       <div>
@@ -879,36 +907,62 @@ function StandingsTable({
     )
   }
 
-  const maxSections = isEnduro ? 6 : (entries[0]?.primary_class === 'kids' ? 9 : 18)
   const hasCompleted = entries.some(e => e.completed)
   const hasIncomplete = entries.some(e => !e.completed)
+
+  // Build column order: S1L1, S2L1, ..., S1L2, S2L2, ... (grouped by lap)
+  const columns: { sec: Section; lap: number; label: string }[] = []
+  for (let lap = 1; lap <= LAPS; lap++) {
+    sections.forEach((sec, i) => {
+      columns.push({ sec, lap, label: `S${i + 1}L${lap}` })
+    })
+  }
+
+  function getScore(riderId: number, sectionId: number, lap: number): number {
+    const score = scores.find(s => 
+      s.competitor_id === riderId && 
+      s.section_id === sectionId && 
+      s.lap === lap
+    )
+    if (!score || score.points === null) return 20
+    return score.points
+  }
 
   return (
     <div>
       <h3 className={`text-xl font-display font-bold ${colorClass} mb-3`}>{title}</h3>
-      <div className="bg-trials-darker rounded-lg overflow-hidden">
-        <table className="w-full">
+      <div className="bg-trials-darker rounded-lg overflow-x-auto">
+        <table className="w-max min-w-full">
           <thead>
-            <tr className="border-b border-gray-700 text-left text-sm text-gray-400">
-              <th className="px-4 py-2 w-16">Rank</th>
-              <th className="px-4 py-2 w-20">No.</th>
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2 w-24 text-center">Sections</th>
-              <th className="px-4 py-2 w-20 text-right">Total</th>
+            <tr className="border-b border-gray-700 text-xs text-gray-400">
+              <th className="px-2 py-2 text-left sticky left-0 bg-trials-darker z-10 w-10">#</th>
+              <th className="px-2 py-2 text-left sticky left-10 bg-trials-darker z-10 w-12">No.</th>
+              <th className="px-2 py-2 text-left sticky left-[5.5rem] bg-trials-darker z-10 min-w-[80px]">Name</th>
+              {columns.map((col, i) => (
+                <th key={i} className={`px-1 py-2 text-center w-10 ${
+                  i > 0 && col.lap !== columns[i - 1].lap ? 'border-l border-gray-700' : ''
+                }`}>
+                  {col.label}
+                </th>
+              ))}
+              <th className="px-2 py-2 text-center w-14 border-l border-gray-700 font-bold">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
             {entries.map((entry, idx) => {
-              const total = isEnduro ? entry.enduro_total : entry.main_total
-              const sections = isEnduro ? entry.enduro_sections_done : entry.main_sections_done
-              const dnf = isEnduro ? entry.enduro_dnf_count : entry.main_dnf_count
-
               // Show separator between completed and incomplete riders
               const showSeparator = hasCompleted && hasIncomplete && !entry.completed && (idx === 0 || entries[idx - 1].completed)
 
+              let total = 0
+              const cellValues = columns.map(col => {
+                const pts = getScore(entry.id, col.sec.id, col.lap)
+                total += pts
+                return pts
+              })
+
               return (
-                <tr key={entry.id} className={`hover:bg-gray-800/50 ${!entry.completed ? 'opacity-60' : ''} ${showSeparator ? 'border-t-2 border-dashed border-gray-600' : ''}`}>
-                  <td className={`px-4 py-3 font-display font-bold text-lg ${
+                <tr key={entry.id} className={`${!entry.completed ? 'opacity-60' : ''} ${showSeparator ? 'border-t-2 border-dashed border-gray-600' : ''}`}>
+                  <td className={`px-2 py-2 font-display font-bold text-sm sticky left-0 bg-trials-darker z-10 ${
                     !entry.completed ? 'text-gray-600' :
                     entry.rank === 1 ? 'text-yellow-400' :
                     entry.rank === 2 ? 'text-gray-300' :
@@ -917,18 +971,21 @@ function StandingsTable({
                   }`}>
                     {entry.completed ? entry.rank : '-'}
                   </td>
-                  <td className="px-4 py-3 font-display font-bold text-trials-orange">
+                  <td className="px-2 py-2 font-display font-bold text-trials-orange text-sm sticky left-10 bg-trials-darker z-10">
                     #{entry.number}
                   </td>
-                  <td className="px-4 py-3">{entry.name}</td>
-                  <td className="px-4 py-3 text-center text-gray-400">
-                    {sections}/{maxSections}
+                  <td className="px-2 py-2 text-sm truncate max-w-[100px] sticky left-[5.5rem] bg-trials-darker z-10">
+                    {entry.name}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`font-display font-bold text-xl ${total === 0 && entry.completed ? 'text-trials-success' : ''}`}>
-                      {total}
-                    </span>
-                    {dnf > 0 && <span className="text-xs text-gray-500 ml-1">({dnf}×DNS)</span>}
+                  {cellValues.map((pts, i) => (
+                    <td key={i} className={`px-1 py-2 text-center text-xs font-mono font-bold ${getScoreCellColor(pts)} ${
+                      i > 0 && columns[i].lap !== columns[i - 1].lap ? 'border-l border-gray-700' : ''
+                    }`}>
+                      {pts}
+                    </td>
+                  ))}
+                  <td className={`px-2 py-2 text-center font-display font-bold text-sm border-l border-gray-700 ${total === 0 && entry.completed ? 'text-trials-success' : ''}`}>
+                    {total}
                   </td>
                 </tr>
               )

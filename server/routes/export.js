@@ -76,11 +76,13 @@ router.get('/csv', (req, res) => {
       const rankedIncomplete = incomplete.map(entry => ({ ...entry, rank: '-' }));
       const allRiders = [...rankedCompleted, ...rankedIncomplete];
 
-      // Build section column headers: Section1 L1, Section1 L2, Section1 L3, Section2 L1, ...
+      // Build section column headers ordered by lap: S1L1, S2L1, ..., S1L2, S2L2, ...
       const sectionHeaders = [];
-      for (const sec of classSections) {
-        for (let lap = 1; lap <= LAPS; lap++) {
-          sectionHeaders.push(`${sec.name} L${lap}`);
+      const sectionLapOrder = []; // { sec, lap } in column order
+      for (let lap = 1; lap <= LAPS; lap++) {
+        for (let i = 0; i < classSections.length; i++) {
+          sectionHeaders.push(`S${i + 1}L${lap}`);
+          sectionLapOrder.push({ sec: classSections[i], lap });
         }
       }
 
@@ -92,23 +94,20 @@ router.get('/csv', (req, res) => {
         const row = [rider.rank, rider.number, `"${rider.name}"`];
 
         let total = 0;
-        for (const sec of classSections) {
-          for (let lap = 1; lap <= LAPS; lap++) {
-            // Find score for this rider, section, lap
-            const score = allScores.find(s => 
-              s.competitor_id === rider.id && 
-              s.section_id === sec.id && 
-              s.lap === lap
-            );
+        for (const { sec, lap } of sectionLapOrder) {
+          // Find score for this rider, section, lap
+          const score = allScores.find(s => 
+            s.competitor_id === rider.id && 
+            s.section_id === sec.id && 
+            s.lap === lap
+          );
 
-            if (!score || score.points === null) {
-              // No score or DNS -> 20
-              row.push(20);
-              total += 20;
-            } else {
-              row.push(score.points);
-              total += score.points;
-            }
+          if (!score || score.points === null) {
+            row.push(20);
+            total += 20;
+          } else {
+            row.push(score.points);
+            total += score.points;
           }
         }
         row.push(total);
