@@ -5,7 +5,7 @@ export interface Competitor {
   id: number;
   number: number;
   name: string;
-  primary_class: 'kids' | 'clubman' | 'advanced';
+  primary_class: 'kids' | 'clubman' | 'advanced' | 'enduro-trial';
   enduro_trial: number;
   photo_url: string | null;
   created_at: string;
