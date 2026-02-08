@@ -53,11 +53,15 @@ router.get('/csv', (req, res) => {
         return done < maxSections;
       });
 
-      // Sort each group by total (lowest first)
+      // Sort each group by total (lowest first), then by last scored time (earlier wins)
       const sortFn = (a, b) => {
         const aTotal = isEnduro ? a.enduro_total : a.main_total;
         const bTotal = isEnduro ? b.enduro_total : b.main_total;
-        return aTotal - bTotal;
+        if (aTotal !== bTotal) return aTotal - bTotal;
+        const aTime = isEnduro ? a.enduro_last_scored_at : a.main_last_scored_at;
+        const bTime = isEnduro ? b.enduro_last_scored_at : b.main_last_scored_at;
+        if (aTime && bTime && aTime !== bTime) return aTime < bTime ? -1 : 1;
+        return 0;
       };
       completed.sort(sortFn);
       incomplete.sort(sortFn);
@@ -68,7 +72,9 @@ router.get('/csv', (req, res) => {
         if (i > 0) {
           const prevTotal = isEnduro ? completed[i - 1].enduro_total : completed[i - 1].main_total;
           const curTotal = isEnduro ? entry.enduro_total : entry.main_total;
-          if (curTotal !== prevTotal) rank = i + 1;
+          const prevTime = isEnduro ? completed[i - 1].enduro_last_scored_at : completed[i - 1].main_last_scored_at;
+          const curTime = isEnduro ? entry.enduro_last_scored_at : entry.main_last_scored_at;
+          if (curTotal !== prevTotal || curTime !== prevTime) rank = i + 1;
         }
         return { ...entry, rank };
       });

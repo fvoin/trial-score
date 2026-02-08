@@ -41,6 +41,8 @@ export interface LeaderboardEntry extends Competitor {
   enduro_sections_done: number;
   main_dnf_count: number;
   enduro_dnf_count: number;
+  main_last_scored_at: string;
+  enduro_last_scored_at: string;
 }
 
 export interface Settings {

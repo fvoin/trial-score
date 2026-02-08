@@ -314,14 +314,16 @@ export default function Manager() {
       return sections < maxSections
     })
 
-    // Sort each group by total points (lowest first)
+    // Sort each group by total points (lowest first), then by last scored time (earlier wins)
     const sortFn = (a: LeaderboardEntry, b: LeaderboardEntry) => {
       const aTotal = isEnduro ? a.enduro_total : a.main_total
       const bTotal = isEnduro ? b.enduro_total : b.main_total
       if (aTotal !== bTotal) return aTotal - bTotal
-      const aSections = isEnduro ? a.enduro_sections_done : a.main_sections_done
-      const bSections = isEnduro ? b.enduro_sections_done : b.main_sections_done
-      return bSections - aSections
+      // Tiebreaker: who finished their last section earlier wins
+      const aTime = isEnduro ? a.enduro_last_scored_at : a.main_last_scored_at
+      const bTime = isEnduro ? b.enduro_last_scored_at : b.main_last_scored_at
+      if (aTime && bTime && aTime !== bTime) return aTime < bTime ? -1 : 1
+      return 0
     }
     completedRiders.sort(sortFn)
     incompleteRiders.sort(sortFn)
@@ -333,7 +335,9 @@ export default function Manager() {
         const prev = completedRiders[index - 1]
         const currentTotal = isEnduro ? entry.enduro_total : entry.main_total
         const prevTotal = isEnduro ? prev.enduro_total : prev.main_total
-        if (currentTotal !== prevTotal) {
+        const currentTime = isEnduro ? entry.enduro_last_scored_at : entry.main_last_scored_at
+        const prevTime = isEnduro ? prev.enduro_last_scored_at : prev.main_last_scored_at
+        if (currentTotal !== prevTotal || currentTime !== prevTime) {
           currentRank = index + 1
         }
       }

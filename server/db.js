@@ -365,6 +365,8 @@ export function getLeaderboard() {
     let enduroSectionsDone = 0;
     let mainDnfCount = 0;
     let enduroDnfCount = 0;
+    let mainLastScoredAt = '';
+    let enduroLastScoredAt = '';
     
     competitorScores.forEach(s => {
       const section = getSection(s.section_id);
@@ -380,6 +382,9 @@ export function getLeaderboard() {
         if (s.points !== null) {
           mainTotal += s.points;
         }
+        if (s.created_at > mainLastScoredAt) {
+          mainLastScoredAt = s.created_at;
+        }
       } else if (section.type === 'enduro') {
         enduroSectionsDone++;
         if (s.is_dnf) {
@@ -387,6 +392,9 @@ export function getLeaderboard() {
         }
         if (s.points !== null) {
           enduroTotal += s.points;
+        }
+        if (s.created_at > enduroLastScoredAt) {
+          enduroLastScoredAt = s.created_at;
         }
       }
     });
@@ -398,7 +406,9 @@ export function getLeaderboard() {
       main_sections_done: mainSectionsDone,
       enduro_sections_done: enduroSectionsDone,
       main_dnf_count: mainDnfCount,
-      enduro_dnf_count: enduroDnfCount
+      enduro_dnf_count: enduroDnfCount,
+      main_last_scored_at: mainLastScoredAt,
+      enduro_last_scored_at: enduroLastScoredAt
     };
   });
 }
