@@ -587,7 +587,6 @@ export default function Manager() {
                     title="Kids" 
                     entries={getRankedByClass('kids')} 
                     colorClass="text-yellow-400"
-                    isEnduro={false}
                     sections={allSections.filter(s => s.type === 'kids')}
                     scores={allScores}
                   />
@@ -597,7 +596,6 @@ export default function Manager() {
                     title="Clubman" 
                     entries={getRankedByClass('clubman')} 
                     colorClass="text-emerald-500"
-                    isEnduro={false}
                     sections={allSections.filter(s => s.type === 'main')}
                     scores={allScores}
                   />
@@ -607,7 +605,6 @@ export default function Manager() {
                     title="Advanced" 
                     entries={getRankedByClass('advanced')} 
                     colorClass="text-red-500"
-                    isEnduro={false}
                     sections={allSections.filter(s => s.type === 'main')}
                     scores={allScores}
                   />
@@ -617,7 +614,6 @@ export default function Manager() {
                     title="Enduro Trial" 
                     entries={getRankedByClass('enduro')} 
                     colorClass="text-gray-300"
-                    isEnduro={true}
                     sections={allSections.filter(s => s.type === 'enduro')}
                     scores={allScores}
                   />
@@ -885,14 +881,12 @@ function StandingsTable({
   title, 
   entries, 
   colorClass,
-  isEnduro,
   sections,
   scores
 }: { 
   title: string; 
   entries: (LeaderboardEntry & { rank: number; completed: boolean })[]; 
   colorClass: string;
-  isEnduro: boolean;
   sections: Section[];
   scores: Score[];
 }) {
