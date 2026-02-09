@@ -8,7 +8,7 @@ import {
   type Competitor
 } from '../api'
 
-// Normalized coordinates for each section on the map
+// Normalized coordinates for each section on the map image
 const SECTION_COORDS: Record<string, { x: number; y: number }> = {
   'Section 1': { x: 0.618, y: 0.365 },
   'Section 2': { x: 0.505, y: 0.218 },
@@ -23,7 +23,6 @@ const SECTION_COORDS: Record<string, { x: number; y: number }> = {
   'Enduro 2':  { x: 0.410, y: 0.444 },
 }
 
-// Short labels for map markers
 const SECTION_LABELS: Record<string, string> = {
   'Section 1': '1', 'Section 2': '2', 'Section 3': '3',
   'Section 4': '4', 'Section 5': '5', 'Section 6': '6',
@@ -38,47 +37,189 @@ const CLASS_COLORS: Record<string, string> = {
   'enduro-trial': '#9ca3af',
 }
 
-// Start position for competitors before any scores
-const START_POS = { x: 0.5, y: 0.95 }
+// Neutral position (bottom-right corner, normalized)
+const NEUTRAL_POS = { x: 0.88, y: 0.92 }
 
-// Playback: 1 real second = this many ms of event time
-const PLAYBACK_SPEED = 5 * 60 * 1000 // 5 minutes per second
-const TICK_INTERVAL = 50 // ms between updates
+// Animation timing (in event-time milliseconds)
+const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving
+const POPUP_DURATION = 3 * 1000       // 3 seconds: show score bubble
+const RETURN_DURATION = 5 * 1000      // 5 seconds after popup: move back
+
+// Playback
+const TICK_INTERVAL = 50 // ms real time between updates
+const SPEED_OPTIONS = [
+  { label: '1x', multiplier: 2 * 60 * 1000 },   // 2 event-min per real sec
+  { label: '2x', multiplier: 4 * 60 * 1000 },   // 4 event-min per real sec
+  { label: '4x', multiplier: 8 * 60 * 1000 },   // 8 event-min per real sec
+]
 
 interface ScoreEvent {
   time: number
   score: Score
   sectionName: string
+  competitorId: number
 }
 
-interface CompetitorState {
-  competitor: Competitor
-  x: number
-  y: number
-  lastScore: Score | null
-  showPopup: boolean
+// For a given competitor at a given time, determine position & popup state
+function getCompetitorAnimState(
+  compId: number,
+  currentTime: number,
+  events: ScoreEvent[]
+): { x: number; y: number; showPopup: boolean; popupScore: Score | null } {
+  // Find the "active" event for this competitor:
+  // An event is active if currentTime is within [scoreTime - APPROACH, scoreTime + POPUP + RETURN]
+  const compEvents = events.filter(e => e.competitorId === compId)
+
+  // Small per-competitor offset to avoid stacking at neutral
+  const offset = ((compId * 7) % 20 - 10) * 0.006
+
+  let activeEvent: ScoreEvent | null = null
+  let activePhaseStart = 0
+
+  for (const evt of compEvents) {
+    const approachStart = evt.time - APPROACH_DURATION
+    const cycleEnd = evt.time + POPUP_DURATION + RETURN_DURATION
+    if (currentTime >= approachStart && currentTime <= cycleEnd) {
+      activeEvent = evt
+      activePhaseStart = approachStart
+      // Don't break - take the latest active event if overlapping
+    }
+  }
+
+  if (!activeEvent) {
+    return {
+      x: NEUTRAL_POS.x + offset,
+      y: NEUTRAL_POS.y + offset * 0.3,
+      showPopup: false,
+      popupScore: null
+    }
+  }
+
+  const sectionCoords = SECTION_COORDS[activeEvent.sectionName]
+  if (!sectionCoords) {
+    return { x: NEUTRAL_POS.x + offset, y: NEUTRAL_POS.y + offset * 0.3, showPopup: false, popupScore: null }
+  }
+
+  const neutralX = NEUTRAL_POS.x + offset
+  const neutralY = NEUTRAL_POS.y + offset * 0.3
+  const sectionX = sectionCoords.x + offset
+  const sectionY = sectionCoords.y + offset * 0.3
+
+  const approachStart = activePhaseStart
+  const scoreTime = activeEvent.time
+  const popupEnd = scoreTime + POPUP_DURATION
+  const returnEnd = popupEnd + RETURN_DURATION
+
+  if (currentTime < scoreTime) {
+    // Phase 1: Approaching section
+    const progress = Math.min(1, (currentTime - approachStart) / APPROACH_DURATION)
+    const eased = easeInOutCubic(progress)
+    return {
+      x: neutralX + (sectionX - neutralX) * eased,
+      y: neutralY + (sectionY - neutralY) * eased,
+      showPopup: false,
+      popupScore: null
+    }
+  } else if (currentTime < popupEnd) {
+    // Phase 2: At section, showing score
+    return {
+      x: sectionX,
+      y: sectionY,
+      showPopup: true,
+      popupScore: activeEvent.score
+    }
+  } else {
+    // Phase 3: Returning to neutral
+    const progress = Math.min(1, (currentTime - popupEnd) / RETURN_DURATION)
+    const eased = easeInOutCubic(progress)
+    return {
+      x: sectionX + (neutralX - sectionX) * eased,
+      y: sectionY + (neutralY - sectionY) * eased,
+      showPopup: false,
+      popupScore: null
+    }
+  }
 }
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+}
+
+// Natural aspect ratio of back.JPEG (will be measured on load)
+const DEFAULT_ASPECT = 16 / 9
 
 export default function Timeline({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(true)
-  const [, setCompetitors] = useState<Competitor[]>([])
+  const [allCompetitors, setAllCompetitors] = useState<Competitor[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [events, setEvents] = useState<ScoreEvent[]>([])
   const [timeRange, setTimeRange] = useState({ start: 0, end: 0 })
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [competitorStates, setCompetitorStates] = useState<Map<number, CompetitorState>>(new Map())
-  
+  const [speedIdx, setSpeedIdx] = useState(0)
+  const [imageAspect, setImageAspect] = useState(DEFAULT_ASPECT)
+
+  // Map container ref for computing image rect
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [imageRect, setImageRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
+
   const playRef = useRef(false)
   const currentTimeRef = useRef(0)
+  const speedIdxRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const popupTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
+  const eventsRef = useRef<ScoreEvent[]>([])
+
+  // Keep refs in sync
+  useEffect(() => { speedIdxRef.current = speedIdx }, [speedIdx])
+  useEffect(() => { eventsRef.current = events }, [events])
+
+  // Compute the image's displayed rect within the container (object-contain logic)
+  const computeImageRect = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const cw = container.clientWidth
+    const ch = container.clientHeight
+    const containerAspect = cw / ch
+
+    let imgW: number, imgH: number, imgLeft: number, imgTop: number
+
+    if (containerAspect > imageAspect) {
+      // Container is wider than image: image height fills, width has black bars
+      imgH = ch
+      imgW = ch * imageAspect
+      imgLeft = (cw - imgW) / 2
+      imgTop = 0
+    } else {
+      // Container is taller than image: image width fills, height has black bars
+      imgW = cw
+      imgH = cw / imageAspect
+      imgLeft = 0
+      imgTop = (ch - imgH) / 2
+    }
+
+    setImageRect({ left: imgLeft, top: imgTop, width: imgW, height: imgH })
+  }, [imageAspect])
+
+  useEffect(() => {
+    computeImageRect()
+    window.addEventListener('resize', computeImageRect)
+    return () => window.removeEventListener('resize', computeImageRect)
+  }, [computeImageRect])
+
+  // Load image to get natural aspect ratio
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      setImageAspect(img.naturalWidth / img.naturalHeight)
+    }
+    img.src = '/back.JPEG'
+  }, [])
 
   useEffect(() => {
     loadData()
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
-      popupTimersRef.current.forEach(t => clearTimeout(t))
     }
   }, [])
 
@@ -89,48 +230,35 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
         getSections(),
         getCompetitors()
       ])
-      
-      setCompetitors(comps)
+
+      setAllCompetitors(comps)
       setSections(secs)
 
-      // Build section name lookup
       const sectionMap = new Map<number, Section>()
       secs.forEach(s => sectionMap.set(s.id, s))
 
-      // Build chronological events
       const scoreEvents: ScoreEvent[] = scoresData
         .map(score => {
           const section = sectionMap.get(score.section_id)
           return {
             time: new Date(score.created_at).getTime(),
             score,
-            sectionName: section?.name || ''
+            sectionName: section?.name || '',
+            competitorId: score.competitor_id
           }
         })
         .filter(e => e.sectionName && SECTION_COORDS[e.sectionName])
         .sort((a, b) => a.time - b.time)
 
       setEvents(scoreEvents)
+      eventsRef.current = scoreEvents
 
       if (scoreEvents.length > 0) {
-        const start = scoreEvents[0].time - 60000 // 1 min before first score
-        const end = scoreEvents[scoreEvents.length - 1].time + 60000
+        const start = scoreEvents[0].time - APPROACH_DURATION - 10000
+        const end = scoreEvents[scoreEvents.length - 1].time + POPUP_DURATION + RETURN_DURATION + 10000
         setTimeRange({ start, end })
         setCurrentTime(start)
         currentTimeRef.current = start
-
-        // Initialize competitor states at start position
-        const states = new Map<number, CompetitorState>()
-        comps.forEach(c => {
-          states.set(c.id, {
-            competitor: c,
-            x: START_POS.x,
-            y: START_POS.y,
-            lastScore: null,
-            showPopup: false
-          })
-        })
-        setCompetitorStates(states)
       }
     } catch (err) {
       console.error('Failed to load timeline data', err)
@@ -139,77 +267,8 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     }
   }
 
-  const updateStates = useCallback((time: number) => {
-    setCompetitorStates(prev => {
-      const next = new Map(prev)
-      
-      // For each competitor, find their latest score at or before `time`
-      const competitorLatest = new Map<number, ScoreEvent>()
-      for (const evt of events) {
-        if (evt.time > time) break
-        competitorLatest.set(evt.score.competitor_id, evt)
-      }
-
-      // Check for newly triggered events (scores that just became active)
-      const prevTime = currentTimeRef.current
-
-      next.forEach((state, compId) => {
-        const latest = competitorLatest.get(compId)
-        if (latest) {
-          const coords = SECTION_COORDS[latest.sectionName]
-          if (coords) {
-            // Add small offset based on competitor id to avoid stacking
-            const offset = ((compId * 7) % 20 - 10) * 0.008
-            next.set(compId, {
-              ...state,
-              x: coords.x + offset,
-              y: coords.y + offset * 0.5,
-              lastScore: latest.score,
-              showPopup: state.showPopup
-            })
-          }
-        } else {
-          next.set(compId, {
-            ...state,
-            x: START_POS.x + ((compId * 7) % 20 - 10) * 0.008,
-            y: START_POS.y,
-            lastScore: null,
-            showPopup: false
-          })
-        }
-      })
-
-      // Trigger popups for events crossing the time boundary
-      for (const evt of events) {
-        if (evt.time > prevTime && evt.time <= time) {
-          const compId = evt.score.competitor_id
-          const state = next.get(compId)
-          if (state) {
-            next.set(compId, { ...state, showPopup: true })
-            // Clear previous popup timer
-            const existingTimer = popupTimersRef.current.get(compId)
-            if (existingTimer) clearTimeout(existingTimer)
-            // Auto-hide popup after 2 seconds
-            const timer = setTimeout(() => {
-              setCompetitorStates(p => {
-                const updated = new Map(p)
-                const s = updated.get(compId)
-                if (s) updated.set(compId, { ...s, showPopup: false })
-                return updated
-              })
-            }, 2000)
-            popupTimersRef.current.set(compId, timer)
-          }
-        }
-      }
-
-      return next
-    })
-  }, [events])
-
   function handlePlay() {
     if (playing) {
-      // Pause
       setPlaying(false)
       playRef.current = false
       if (timerRef.current) {
@@ -217,25 +276,25 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
         timerRef.current = null
       }
     } else {
-      // If at end, restart
       let startFrom = currentTimeRef.current
       if (startFrom >= timeRange.end) {
         startFrom = timeRange.start
         setCurrentTime(timeRange.start)
         currentTimeRef.current = timeRange.start
       }
-      
+
       setPlaying(true)
       playRef.current = true
-      
+
       timerRef.current = setInterval(() => {
         if (!playRef.current) return
-        
-        const nextTime = currentTimeRef.current + (PLAYBACK_SPEED * TICK_INTERVAL / 1000)
+
+        const speed = SPEED_OPTIONS[speedIdxRef.current].multiplier
+        const nextTime = currentTimeRef.current + (speed * TICK_INTERVAL / 1000)
+
         if (nextTime >= timeRange.end) {
           currentTimeRef.current = timeRange.end
           setCurrentTime(timeRange.end)
-          updateStates(timeRange.end)
           setPlaying(false)
           playRef.current = false
           if (timerRef.current) {
@@ -244,10 +303,9 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
           }
           return
         }
-        
+
         currentTimeRef.current = nextTime
         setCurrentTime(nextTime)
-        updateStates(nextTime)
       }, TICK_INTERVAL)
     }
   }
@@ -256,18 +314,22 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     const time = Number(e.target.value)
     currentTimeRef.current = time
     setCurrentTime(time)
-    updateStates(time)
-    // Clear all popups on manual scrub
-    popupTimersRef.current.forEach(t => clearTimeout(t))
-    popupTimersRef.current.clear()
   }
 
   function formatTime(ms: number): string {
+    if (!ms) return '--:--'
     const d = new Date(ms)
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  // Count events that have happened
+  // Convert normalized coords to pixel position within container
+  function toPixel(nx: number, ny: number): { left: number; top: number } {
+    return {
+      left: imageRect.left + nx * imageRect.width,
+      top: imageRect.top + ny * imageRect.height
+    }
+  }
+
   const eventsHappened = events.filter(e => e.time <= currentTime).length
 
   if (loading) {
@@ -281,12 +343,12 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-black/80 z-20">
+      <div className="flex items-center justify-between px-4 py-2 bg-black/80 z-30 shrink-0">
         <button
           onClick={onBack}
           className="text-white hover:text-trials-orange transition-colors font-display font-bold text-sm"
         >
-          &larr; Back to Standings
+          &larr; Back
         </button>
         <div className="text-gray-400 text-sm">
           {formatTime(currentTime)} &middot; {eventsHappened}/{events.length} scores
@@ -294,29 +356,38 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Map area */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Background image */}
+      <div ref={containerRef} className="flex-1 relative overflow-hidden bg-black">
+        {/* Background image - object-contain so full image always visible */}
         <img
           src="/back.JPEG"
           alt="Event map"
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain"
           draggable={false}
         />
-        {/* Dark overlay for readability */}
-        <div className="absolute inset-0 bg-black/20" />
+        {/* Slight overlay */}
+        <div
+          className="absolute bg-black/15 pointer-events-none"
+          style={{
+            left: imageRect.left,
+            top: imageRect.top,
+            width: imageRect.width,
+            height: imageRect.height
+          }}
+        />
 
-        {/* Section markers */}
+        {/* Section markers - positioned relative to image rect */}
         {sections.map(sec => {
           const coords = SECTION_COORDS[sec.name]
           if (!coords) return null
           const label = SECTION_LABELS[sec.name] || sec.name
+          const pos = toPixel(coords.x, coords.y)
           return (
             <div
               key={sec.id}
               className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10"
-              style={{ left: `${coords.x * 100}%`, top: `${coords.y * 100}%` }}
+              style={{ left: pos.left, top: pos.top }}
             >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 ${
+              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold shadow-lg border-2 ${
                 sec.type === 'kids' ? 'bg-yellow-400/90 border-yellow-300 text-black' :
                 sec.type === 'enduro' ? 'bg-gray-600/90 border-gray-400 text-white' :
                 'bg-white/90 border-white text-black'
@@ -328,51 +399,48 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
         })}
 
         {/* Competitor avatars */}
-        {Array.from(competitorStates.values()).map(state => {
-          const { competitor, x, y, lastScore, showPopup } = state
-          const borderColor = CLASS_COLORS[competitor.primary_class] || '#9ca3af'
-          const points = lastScore?.points
-          const isDns = lastScore?.is_dnf
-          
+        {allCompetitors.map(comp => {
+          const animState = getCompetitorAnimState(comp.id, currentTime, events)
+          const { x, y, showPopup, popupScore } = animState
+          const borderColor = CLASS_COLORS[comp.primary_class] || '#9ca3af'
+          const pos = toPixel(x, y)
+
           return (
             <div
-              key={competitor.id}
+              key={comp.id}
               className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20"
-              style={{
-                left: `${x * 100}%`,
-                top: `${y * 100}%`,
-                transition: 'left 1s ease-in-out, top 1s ease-in-out'
-              }}
+              style={{ left: pos.left, top: pos.top }}
             >
               {/* Score popup */}
-              {showPopup && lastScore && (
+              {showPopup && popupScore && (
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 whitespace-nowrap animate-fade-in">
                   <div className={`px-2 py-0.5 rounded text-xs font-bold shadow-lg ${
-                    isDns ? 'bg-gray-600 text-white' :
-                    points === 0 ? 'bg-green-500 text-white' :
-                    points === 5 ? 'bg-red-500 text-white' :
+                    popupScore.is_dnf ? 'bg-gray-600 text-white' :
+                    popupScore.points === 0 ? 'bg-green-500 text-white' :
+                    popupScore.points === 5 ? 'bg-red-500 text-white' :
+                    popupScore.points === 20 ? 'bg-gray-600 text-white' :
                     'bg-trials-orange text-black'
                   }`}>
-                    #{competitor.number}: {isDns ? 'DNS' : points}
+                    #{comp.number}: {popupScore.is_dnf ? 'DNS' : popupScore.points}
                   </div>
                 </div>
               )}
-              
+
               {/* Avatar */}
               <div
-                className="w-9 h-9 rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800"
+                className="w-8 h-8 md:w-9 md:h-9 rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800"
                 style={{ borderColor }}
               >
-                {competitor.photo_url ? (
+                {comp.photo_url ? (
                   <img
-                    src={competitor.photo_url}
-                    alt={competitor.name}
+                    src={comp.photo_url}
+                    alt={comp.name}
                     className="w-full h-full object-cover"
                     draggable={false}
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white">
-                    {competitor.number}
+                  <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-white">
+                    {comp.number}
                   </div>
                 )}
               </div>
@@ -382,27 +450,44 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Controls bar */}
-      <div className="bg-black/90 px-4 py-3 z-20">
-        <div className="flex items-center gap-4 max-w-4xl mx-auto">
+      <div className="bg-black/90 px-4 py-3 z-30 shrink-0">
+        <div className="flex items-center gap-3 max-w-4xl mx-auto">
           {/* Play/Pause button */}
           <button
             onClick={handlePlay}
-            className="w-12 h-12 rounded-full bg-trials-orange text-black flex items-center justify-center hover:bg-trials-orange/90 transition-colors shrink-0"
+            className="w-11 h-11 rounded-full bg-trials-orange text-black flex items-center justify-center hover:bg-trials-orange/90 transition-colors shrink-0"
           >
             {playing ? (
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <rect x="6" y="4" width="4" height="16" />
                 <rect x="14" y="4" width="4" height="16" />
               </svg>
             ) : (
-              <svg className="w-6 h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                 <polygon points="5,3 19,12 5,21" />
               </svg>
             )}
           </button>
 
+          {/* Speed selector */}
+          <div className="flex rounded-lg overflow-hidden border border-gray-700 shrink-0">
+            {SPEED_OPTIONS.map((opt, i) => (
+              <button
+                key={opt.label}
+                onClick={() => setSpeedIdx(i)}
+                className={`px-2 py-1 text-xs font-bold transition-colors ${
+                  speedIdx === i
+                    ? 'bg-trials-orange text-black'
+                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           {/* Timeline slider */}
-          <div className="flex-1 flex flex-col gap-1">
+          <div className="flex-1 flex flex-col gap-1 min-w-0">
             <input
               type="range"
               min={timeRange.start}
@@ -411,7 +496,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
               onChange={handleSliderChange}
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-trials-orange"
             />
-            <div className="flex justify-between text-xs text-gray-500">
+            <div className="flex justify-between text-[10px] text-gray-500">
               <span>{formatTime(timeRange.start)}</span>
               <span>{formatTime(timeRange.end)}</span>
             </div>
