@@ -61,7 +61,7 @@ interface CompetitorState {
 
 export default function Timeline({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(true)
-  const [competitors, setCompetitors] = useState<Competitor[]>([])
+  const [, setCompetitors] = useState<Competitor[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [events, setEvents] = useState<ScoreEvent[]>([])
   const [timeRange, setTimeRange] = useState({ start: 0, end: 0 })
