@@ -9,6 +9,7 @@ import {
   type LeaderboardEntry,
   type Settings
 } from '../api'
+import Timeline from './Timeline'
 
 const LAPS = 3
 
@@ -196,6 +197,7 @@ export default function FinalScores() {
   const [sections, setSections] = useState<Section[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [showTimeline, setShowTimeline] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -228,6 +230,10 @@ export default function FinalScores() {
     )
   }
 
+  if (showTimeline) {
+    return <Timeline onBack={() => setShowTimeline(false)} />
+  }
+
   const kidsSections = sections.filter(s => s.type === 'kids')
   const mainSections = sections.filter(s => s.type === 'main')
   const enduroSections = sections.filter(s => s.type === 'enduro')
@@ -244,6 +250,16 @@ export default function FinalScores() {
           {settings?.event_date && (
             <p className="text-sm text-gray-500 mt-1">{settings.event_date}</p>
           )}
+          <button
+            onClick={() => setShowTimeline(true)}
+            className="mt-4 px-6 py-2 bg-trials-orange text-black font-display font-bold rounded-lg hover:bg-trials-orange/90 transition-colors inline-flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Event Timeline
+          </button>
         </div>
 
         {/* Standings tables */}
