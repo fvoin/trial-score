@@ -34,11 +34,11 @@ COPY --from=builder /app/server ./server
 RUN mkdir -p /app/uploads
 
 # Expose port
-EXPOSE 3000
+EXPOSE 8080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD sh -c 'wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/ || exit 1'
 
 # Start server
 CMD ["node", "server/index.js"]
