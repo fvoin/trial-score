@@ -58,7 +58,7 @@ function getCompetitorAnimState(
   compId: number,
   currentTime: number,
   events: ScoreEvent[]
-): { x: number; y: number; showPopup: boolean; popupScore: Score | null; isActive: boolean } {
+): { x: number; y: number; showPopup: boolean; popupScore: Score | null } {
   const compEvents = events.filter(e => e.competitorId === compId)
 
   // Small per-competitor offset at neutral only
@@ -67,13 +67,13 @@ function getCompetitorAnimState(
   const neutralY = NEUTRAL_POS.y + offset * 0.3
 
   if (compEvents.length === 0) {
-    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null, isActive: false }
+    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
   }
 
   // Before first event's approach → at neutral
   const firstApproachStart = compEvents[0].time - APPROACH_DURATION
   if (currentTime < firstApproachStart) {
-    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null, isActive: false }
+    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
   }
 
   for (let i = 0; i < compEvents.length; i++) {
@@ -117,19 +117,17 @@ function getCompetitorAnimState(
       return {
         x: startX + (sectionCoords.x - startX) * eased,
         y: startY + (sectionCoords.y - startY) * eased,
-        showPopup: false, popupScore: null, isActive: true
-      }
+        showPopup: false, popupScore: null      }
     } else if (currentTime >= evt.time && currentTime < popupEnd) {
       // At section, showing score popup
       return {
         x: sectionCoords.x, y: sectionCoords.y,
-        showPopup: true, popupScore: evt.score, isActive: true
-      }
+        showPopup: true, popupScore: evt.score      }
     } else if (currentTime >= popupEnd && currentTime < idleEnd) {
       // Idle at this section, waiting for next
       return {
         x: sectionCoords.x, y: sectionCoords.y,
-        showPopup: false, popupScore: null, isActive: false
+        showPopup: false, popupScore: null
       }
     }
   }
@@ -138,10 +136,10 @@ function getCompetitorAnimState(
   const lastEvt = compEvents[compEvents.length - 1]
   const lastCoords = SECTION_COORDS[lastEvt.sectionName]
   if (lastCoords) {
-    return { x: lastCoords.x, y: lastCoords.y, showPopup: false, popupScore: null, isActive: false }
+    return { x: lastCoords.x, y: lastCoords.y, showPopup: false, popupScore: null }
   }
 
-  return { x: neutralX, y: neutralY, showPopup: false, popupScore: null, isActive: false }
+  return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
 }
 
 function easeInOutCubic(t: number): number {
@@ -397,25 +395,38 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
 
         {/* Section labels are already on the background image */}
 
-        {/* Competitor avatars */}
-        {allCompetitors.map(comp => {
-          const animState = getCompetitorAnimState(comp.id, currentTime, events)
-          const { x, y, showPopup, popupScore, isActive } = animState
-          const borderColor = CLASS_COLORS[comp.primary_class] || '#9ca3af'
-          const pos = toPixel(x, y)
-          const isSelected = selectedCompId === comp.id
-          // Active (moving/popup) riders on top, then selected, then idle
-          const zClass = showPopup ? 'z-[25]' : isActive ? 'z-[24]' : isSelected ? 'z-[23]' : 'z-20'
+        {/* Competitor avatars — z-order based on last arrival time */}
+        {(() => {
+          // Compute last arrival time per competitor for z-ordering
+          const arrivalMap = new Map<number, number>()
+          for (const comp of allCompetitors) {
+            const compEvents = events.filter(e => e.competitorId === comp.id && e.time <= currentTime)
+            if (compEvents.length > 0) {
+              arrivalMap.set(comp.id, compEvents[compEvents.length - 1].time)
+            }
+          }
+          // Rank by arrival time: later arrival = higher z
+          const arrivals = [...arrivalMap.entries()].sort((a, b) => a[1] - b[1])
+          const zMap = new Map<number, number>()
+          arrivals.forEach(([id], idx) => zMap.set(id, 20 + idx))
 
-          return (
-            <div
-              key={comp.id}
-              className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${zClass}`}
-              style={{ left: pos.left, top: pos.top }}
-            >
-              {/* Score popup */}
+          return allCompetitors.map(comp => {
+            const animState = getCompetitorAnimState(comp.id, currentTime, events)
+            const { x, y, showPopup, popupScore } = animState
+            const borderColor = CLASS_COLORS[comp.primary_class] || '#9ca3af'
+            const pos = toPixel(x, y)
+            const isSelected = selectedCompId === comp.id
+            const zIndex = zMap.get(comp.id) ?? 19
+
+            return (
+              <div
+                key={comp.id}
+                className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                style={{ left: pos.left, top: pos.top, zIndex }}
+              >
+              {/* Score popup — always above all riders */}
               {showPopup && popupScore && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in z-[35]">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in" style={{ zIndex: 999 }}>
                   <div className={`px-3 py-1 rounded-lg text-sm font-bold shadow-lg ${
                     popupScore.is_dnf ? 'bg-gray-600 text-white' :
                     popupScore.points === 0 ? 'bg-green-500 text-white' :
@@ -448,8 +459,9 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
                 )}
               </div>
             </div>
-          )
-        })}
+            )
+          })
+        })()}
       </div>
 
       {/* Selected competitor score card */}
