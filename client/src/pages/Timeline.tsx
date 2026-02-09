@@ -30,11 +30,8 @@ const CLASS_COLORS: Record<string, string> = {
   'enduro-trial': '#9ca3af',
 }
 
-// Neutral position (bottom-right corner, normalized) — used only before first score
-const NEUTRAL_POS = { x: 0.88, y: 0.92 }
-
 // Animation timing (in event-time milliseconds)
-const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving
+const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving / fade in
 const POPUP_DURATION = 36 * 1000      // 36 event-sec (~3 real sec at 1x): show score bubble
 
 // Playback
@@ -53,28 +50,20 @@ interface ScoreEvent {
 }
 
 // For a given competitor at a given time, determine position & popup state.
-// Riders stay at their last scored section (never return to neutral).
+// Riders fade in at their first section, then move between sections. Never return to neutral.
 function getCompetitorAnimState(
   compId: number,
   currentTime: number,
   events: ScoreEvent[]
-): { x: number; y: number; showPopup: boolean; popupScore: Score | null } {
+): { x: number; y: number; showPopup: boolean; popupScore: Score | null; visible: boolean; opacity: number } {
   const compEvents = events.filter(e => e.competitorId === compId)
+  const hidden = { x: 0, y: 0, showPopup: false, popupScore: null, visible: false, opacity: 0 }
 
-  // Small per-competitor offset at neutral only
-  const offset = ((compId * 7) % 20 - 10) * 0.006
-  const neutralX = NEUTRAL_POS.x + offset
-  const neutralY = NEUTRAL_POS.y + offset * 0.3
+  if (compEvents.length === 0) return hidden
 
-  if (compEvents.length === 0) {
-    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
-  }
-
-  // Before first event's approach → at neutral
+  // Before first event's approach → not visible
   const firstApproachStart = compEvents[0].time - APPROACH_DURATION
-  if (currentTime < firstApproachStart) {
-    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
-  }
+  if (currentTime < firstApproachStart) return hidden
 
   for (let i = 0; i < compEvents.length; i++) {
     const evt = compEvents[i]
@@ -84,10 +73,10 @@ function getCompetitorAnimState(
     const sectionCoords = SECTION_COORDS[evt.sectionName]
     if (!sectionCoords) continue
 
-    // Where does approach start & from where?
+    const isFirst = !prevEvt
     let approachStart = evt.time - APPROACH_DURATION
-    let startX = neutralX
-    let startY = neutralY
+    let startX = sectionCoords.x
+    let startY = sectionCoords.y
 
     if (prevEvt) {
       const prevCoords = SECTION_COORDS[prevEvt.sectionName]
@@ -95,14 +84,11 @@ function getCompetitorAnimState(
       if (prevCoords) {
         startX = prevCoords.x
         startY = prevCoords.y
-        // Approach starts either naturally, or right after prev popup (whichever is later)
         approachStart = Math.max(prevPopupEnd, approachStart)
       }
     }
 
     const popupEnd = evt.time + POPUP_DURATION
-
-    // Determine when idle at this section ends (= next event's approach start)
     let idleEnd = Infinity
     if (nextEvt) {
       const nextNaturalApproach = nextEvt.time - APPROACH_DURATION
@@ -110,25 +96,25 @@ function getCompetitorAnimState(
     }
 
     if (currentTime >= approachStart && currentTime < evt.time) {
-      // Approaching this section
-      const duration = evt.time - approachStart
-      const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / duration))
-      const eased = easeInOutCubic(progress)
-      return {
-        x: startX + (sectionCoords.x - startX) * eased,
-        y: startY + (sectionCoords.y - startY) * eased,
-        showPopup: false, popupScore: null      }
-    } else if (currentTime >= evt.time && currentTime < popupEnd) {
-      // At section, showing score popup
-      return {
-        x: sectionCoords.x, y: sectionCoords.y,
-        showPopup: true, popupScore: evt.score      }
-    } else if (currentTime >= popupEnd && currentTime < idleEnd) {
-      // Idle at this section, waiting for next
-      return {
-        x: sectionCoords.x, y: sectionCoords.y,
-        showPopup: false, popupScore: null
+      if (isFirst) {
+        // First event: fade in at section position
+        const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / APPROACH_DURATION))
+        return { x: sectionCoords.x, y: sectionCoords.y, showPopup: false, popupScore: null, visible: true, opacity: progress }
+      } else {
+        // Move from previous section to this one
+        const duration = evt.time - approachStart
+        const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / duration))
+        const eased = easeInOutCubic(progress)
+        return {
+          x: startX + (sectionCoords.x - startX) * eased,
+          y: startY + (sectionCoords.y - startY) * eased,
+          showPopup: false, popupScore: null, visible: true, opacity: 1
+        }
       }
+    } else if (currentTime >= evt.time && currentTime < popupEnd) {
+      return { x: sectionCoords.x, y: sectionCoords.y, showPopup: true, popupScore: evt.score, visible: true, opacity: 1 }
+    } else if (currentTime >= popupEnd && currentTime < idleEnd) {
+      return { x: sectionCoords.x, y: sectionCoords.y, showPopup: false, popupScore: null, visible: true, opacity: 1 }
     }
   }
 
@@ -136,10 +122,10 @@ function getCompetitorAnimState(
   const lastEvt = compEvents[compEvents.length - 1]
   const lastCoords = SECTION_COORDS[lastEvt.sectionName]
   if (lastCoords) {
-    return { x: lastCoords.x, y: lastCoords.y, showPopup: false, popupScore: null }
+    return { x: lastCoords.x, y: lastCoords.y, showPopup: false, popupScore: null, visible: true, opacity: 1 }
   }
 
-  return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
+  return hidden
 }
 
 function easeInOutCubic(t: number): number {
@@ -160,6 +146,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
   const [speedIdx, setSpeedIdx] = useState(0)
   const [imageAspect, setImageAspect] = useState(DEFAULT_ASPECT)
   const [selectedCompId, setSelectedCompId] = useState<number | null>(null)
+  const [visibleClasses, setVisibleClasses] = useState<Set<string>>(new Set(['kids', 'clubman', 'advanced', 'enduro-trial']))
 
   // Map container ref for computing image rect
   const containerRef = useRef<HTMLDivElement>(null)
@@ -170,7 +157,6 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
   const speedIdxRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const eventsRef = useRef<ScoreEvent[]>([])
-  const selectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Keep refs in sync
   useEffect(() => { speedIdxRef.current = speedIdx }, [speedIdx])
@@ -223,7 +209,6 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     loadData()
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
-      if (selectedTimerRef.current) clearTimeout(selectedTimerRef.current)
     }
   }, [])
 
@@ -334,10 +319,22 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     }
   }
 
-  function handleAvatarTap(compId: number) {
-    if (selectedTimerRef.current) clearTimeout(selectedTimerRef.current)
+  function handleAvatarTap(compId: number, e: React.MouseEvent) {
+    e.stopPropagation()
     setSelectedCompId(prev => prev === compId ? null : compId)
-    selectedTimerRef.current = setTimeout(() => setSelectedCompId(null), 10000)
+  }
+
+  function handleMapClick() {
+    if (selectedCompId != null) setSelectedCompId(null)
+  }
+
+  function toggleClass(cls: string) {
+    setVisibleClasses(prev => {
+      const next = new Set(prev)
+      if (next.has(cls)) next.delete(cls)
+      else next.add(cls)
+      return next
+    })
   }
 
   // Get scores for selected competitor up to current time
@@ -349,6 +346,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     : []
 
   const eventsHappened = events.filter(e => e.time <= currentTime).length
+  const filteredCompetitors = allCompetitors.filter(c => visibleClasses.has(c.primary_class))
 
   if (loading) {
     return (
@@ -357,6 +355,13 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
       </div>
     )
   }
+
+  const CLASS_FILTERS: { key: string; label: string; color: string }[] = [
+    { key: 'kids', label: 'K', color: '#facc15' },
+    { key: 'clubman', label: 'C', color: '#10b981' },
+    { key: 'advanced', label: 'A', color: '#ef4444' },
+    { key: 'enduro-trial', label: 'E', color: '#9ca3af' },
+  ]
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
@@ -368,14 +373,37 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
         >
           &larr; Back
         </button>
+
+        {/* Class filter toggles */}
+        <div className="flex gap-1">
+          {CLASS_FILTERS.map(cf => {
+            const active = visibleClasses.has(cf.key)
+            return (
+              <button
+                key={cf.key}
+                onClick={() => toggleClass(cf.key)}
+                className="w-7 h-7 rounded-full text-[10px] font-bold border-2 transition-all"
+                style={{
+                  borderColor: cf.color,
+                  backgroundColor: active ? cf.color : 'transparent',
+                  color: active ? '#000' : cf.color,
+                  opacity: active ? 1 : 0.4
+                }}
+              >
+                {cf.label}
+              </button>
+            )
+          })}
+        </div>
+
         <div className="text-gray-400 text-sm">
-          {formatTime(currentTime)} &middot; {eventsHappened}/{events.length} scores
+          {eventsHappened}/{events.length}
         </div>
       </div>
 
       {/* Map area */}
-      <div ref={containerRef} className="flex-1 relative overflow-hidden bg-black">
-        {/* Background image - object-contain so full image always visible */}
+      <div ref={containerRef} className="flex-1 relative overflow-hidden bg-black" onClick={handleMapClick}>
+        {/* Background image */}
         <img
           src="/back.JPEG"
           alt="Event map"
@@ -393,103 +421,109 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
           }}
         />
 
-        {/* Section labels are already on the background image */}
-
-        {/* Competitor avatars — z-order based on last arrival time */}
+        {/* Competitor avatars */}
         {(() => {
-          // Compute last arrival time per competitor for z-ordering
+          // z-order based on last arrival time
           const arrivalMap = new Map<number, number>()
-          for (const comp of allCompetitors) {
+          for (const comp of filteredCompetitors) {
             const compEvents = events.filter(e => e.competitorId === comp.id && e.time <= currentTime)
             if (compEvents.length > 0) {
               arrivalMap.set(comp.id, compEvents[compEvents.length - 1].time)
             }
           }
-          // Rank by arrival time: later arrival = higher z
           const arrivals = [...arrivalMap.entries()].sort((a, b) => a[1] - b[1])
           const zMap = new Map<number, number>()
           arrivals.forEach(([id], idx) => zMap.set(id, 20 + idx))
 
-          return allCompetitors.map(comp => {
+          return filteredCompetitors.map(comp => {
             const animState = getCompetitorAnimState(comp.id, currentTime, events)
-            const { x, y, showPopup, popupScore } = animState
+            const { x, y, showPopup, popupScore, visible, opacity: animOpacity } = animState
+
+            if (!visible) return null
+
             const borderColor = CLASS_COLORS[comp.primary_class] || '#9ca3af'
             const pos = toPixel(x, y)
             const isSelected = selectedCompId === comp.id
+            const isFocusMode = selectedCompId != null
             const zIndex = zMap.get(comp.id) ?? 19
+            // In focus mode: dim all except the selected rider
+            const focusOpacity = isFocusMode && !isSelected ? 0.2 : 1
+            const finalOpacity = animOpacity * focusOpacity
 
             return (
               <div
                 key={comp.id}
-                className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                style={{ left: pos.left, top: pos.top, zIndex }}
+                className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-opacity duration-300"
+                style={{ left: pos.left, top: pos.top, zIndex, opacity: finalOpacity }}
               >
-              {/* Score popup — always above all riders */}
-              {showPopup && popupScore && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in" style={{ zIndex: 999 }}>
-                  <div className={`px-3 py-1 rounded-lg text-sm font-bold shadow-lg ${
-                    popupScore.is_dnf ? 'bg-gray-600 text-white' :
-                    popupScore.points === 0 ? 'bg-green-500 text-white' :
-                    popupScore.points === 5 ? 'bg-red-500 text-white' :
-                    popupScore.points === 20 ? 'bg-gray-600 text-white' :
-                    'bg-trials-orange text-black'
-                  }`}>
-                    {popupScore.is_dnf ? 'DNS' : popupScore.points}
-                  </div>
-                </div>
-              )}
-
-              {/* Avatar */}
-              <div
-                className={`w-16 h-16 md:w-[72px] md:h-[72px] rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800 cursor-pointer ${isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-black' : ''}`}
-                style={{ borderColor }}
-                onClick={() => handleAvatarTap(comp.id)}
-              >
-                {comp.photo_url ? (
-                  <img
-                    src={comp.photo_url}
-                    alt={comp.name}
-                    className="w-full h-full object-cover"
-                    draggable={false}
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-base font-bold text-white">
-                    {comp.number}
+                {/* Score popup — always above all riders */}
+                {showPopup && popupScore && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in" style={{ zIndex: 999 }}>
+                    <div className={`px-3 py-1 rounded-lg text-sm font-bold shadow-lg ${
+                      popupScore.is_dnf ? 'bg-gray-600 text-white' :
+                      popupScore.points === 0 ? 'bg-green-500 text-white' :
+                      popupScore.points === 5 ? 'bg-red-500 text-white' :
+                      popupScore.points === 20 ? 'bg-gray-600 text-white' :
+                      'bg-trials-orange text-black'
+                    }`}>
+                      {popupScore.is_dnf ? 'DNS' : popupScore.points}
+                    </div>
                   </div>
                 )}
+
+                {/* Avatar */}
+                <div
+                  className={`w-16 h-16 md:w-[72px] md:h-[72px] rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800 cursor-pointer ${isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-black' : ''}`}
+                  style={{ borderColor }}
+                  onClick={(e) => handleAvatarTap(comp.id, e)}
+                >
+                  {comp.photo_url ? (
+                    <img
+                      src={comp.photo_url}
+                      alt={comp.name}
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-base font-bold text-white">
+                      {comp.number}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
             )
           })
         })()}
-      </div>
 
-      {/* Selected competitor score card */}
-      {selectedComp && selectedScores.length > 0 && (
-        <div className="bg-black/85 px-3 py-2 z-30 shrink-0 border-t border-gray-700 animate-fade-in">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-white font-bold text-xs">#{selectedComp.number} {selectedComp.name}</span>
-              <button onClick={() => setSelectedCompId(null)} className="text-gray-500 hover:text-white text-xs ml-auto">&times;</button>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {selectedScores.map((s, i) => {
-                const label = s.section.replace('Section ', 'S').replace('Kids ', 'K').replace('Enduro ', 'E')
-                return (
-                  <div key={i} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    s.score.is_dnf ? 'bg-gray-600 text-white' :
-                    s.score.points === 0 ? 'bg-green-600 text-white' :
-                    s.score.points === 5 ? 'bg-red-500 text-white' :
-                    'bg-trials-orange/90 text-black'
-                  }`}>
-                    {label}: {s.score.is_dnf ? 'DNS' : s.score.points}
-                  </div>
-                )
-              })}
+        {/* Selected competitor score card — absolute overlay inside map, doesn't affect layout */}
+        {selectedComp && selectedScores.length > 0 && (
+          <div
+            className="absolute bottom-2 left-2 right-2 z-[100] animate-fade-in pointer-events-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-black/85 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700 max-w-md mx-auto pointer-events-auto">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-white font-bold text-xs">#{selectedComp.number} {selectedComp.name}</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {selectedScores.map((s, i) => {
+                  const label = s.section.replace('Section ', 'S').replace('Kids ', 'K').replace('Enduro ', 'E')
+                  return (
+                    <div key={i} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      s.score.is_dnf ? 'bg-gray-600 text-white' :
+                      s.score.points === 0 ? 'bg-green-600 text-white' :
+                      s.score.points === 5 ? 'bg-red-500 text-white' :
+                      'bg-trials-orange/90 text-black'
+                    }`}>
+                      {label}: {s.score.is_dnf ? 'DNS' : s.score.points}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Controls bar */}
       <div className="bg-black/90 px-4 py-3 z-30 shrink-0">
