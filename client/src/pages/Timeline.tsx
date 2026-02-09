@@ -59,56 +59,70 @@ function getCompetitorAnimState(
   currentTime: number,
   events: ScoreEvent[]
 ): { x: number; y: number; showPopup: boolean; popupScore: Score | null } {
-  // Find the "active" event for this competitor:
-  // An event is active if currentTime is within [scoreTime - APPROACH, scoreTime + POPUP + RETURN]
   const compEvents = events.filter(e => e.competitorId === compId)
 
-  // Small per-competitor offset to avoid stacking at neutral only
+  // Small per-competitor offset at neutral only
   const offset = ((compId * 7) % 20 - 10) * 0.006
   const neutralX = NEUTRAL_POS.x + offset
   const neutralY = NEUTRAL_POS.y + offset * 0.3
 
-  let activeEvent: ScoreEvent | null = null
+  // Find the active event and the next event
+  let activeIdx = -1
 
-  for (const evt of compEvents) {
+  for (let i = 0; i < compEvents.length; i++) {
+    const evt = compEvents[i]
     const approachStart = evt.time - APPROACH_DURATION
     const cycleEnd = evt.time + POPUP_DURATION + RETURN_DURATION
     if (currentTime >= approachStart && currentTime <= cycleEnd) {
-      activeEvent = evt
-      // Don't break - take the latest active event if overlapping
+      activeIdx = i
     }
   }
 
-  if (!activeEvent) {
-    return {
-      x: neutralX,
-      y: neutralY,
-      showPopup: false,
-      popupScore: null
-    }
+  if (activeIdx === -1) {
+    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
   }
+
+  const activeEvent = compEvents[activeIdx]
+  const nextEvent = activeIdx + 1 < compEvents.length ? compEvents[activeIdx + 1] : null
 
   const sectionCoords = SECTION_COORDS[activeEvent.sectionName]
   if (!sectionCoords) {
     return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
   }
 
-  // Section position is exact — no offset
   const sectionX = sectionCoords.x
   const sectionY = sectionCoords.y
-
-  // Always use fixed APPROACH_DURATION before score time
-  const approachStart = activeEvent.time - APPROACH_DURATION
   const scoreTime = activeEvent.time
   const popupEnd = scoreTime + POPUP_DURATION
 
   if (currentTime < scoreTime) {
     // Phase 1: Approaching section
-    const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / APPROACH_DURATION))
+    // Determine start position: neutral, or previous section if transitioning directly
+    let startX = neutralX
+    let startY = neutralY
+    let approachStart = activeEvent.time - APPROACH_DURATION
+
+    // Check if previous event's return phase overlaps with this approach
+    if (activeIdx > 0) {
+      const prevEvent = compEvents[activeIdx - 1]
+      const prevPopupEnd = prevEvent.time + POPUP_DURATION
+      const prevReturnEnd = prevPopupEnd + RETURN_DURATION
+      const prevCoords = SECTION_COORDS[prevEvent.sectionName]
+
+      if (prevCoords && approachStart < prevReturnEnd) {
+        // Short break: transition directly from previous section to this one
+        startX = prevCoords.x
+        startY = prevCoords.y
+        approachStart = prevPopupEnd // start moving right after prev popup ends
+      }
+    }
+
+    const duration = scoreTime - approachStart
+    const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / duration))
     const eased = easeInOutCubic(progress)
     return {
-      x: neutralX + (sectionX - neutralX) * eased,
-      y: neutralY + (sectionY - neutralY) * eased,
+      x: startX + (sectionX - startX) * eased,
+      y: startY + (sectionY - startY) * eased,
       showPopup: false,
       popupScore: null
     }
@@ -121,12 +135,30 @@ function getCompetitorAnimState(
       popupScore: activeEvent.score
     }
   } else {
-    // Phase 3: Returning to neutral
-    const progress = Math.min(1, (currentTime - popupEnd) / RETURN_DURATION)
+    // Phase 3: Returning
+    // Determine destination: neutral, or next section if transitioning directly
+    let destX = neutralX
+    let destY = neutralY
+    let returnDuration = RETURN_DURATION
+
+    if (nextEvent) {
+      const nextApproachStart = nextEvent.time - APPROACH_DURATION
+      if (nextApproachStart < popupEnd + RETURN_DURATION) {
+        // Short break: go directly to next section
+        const nextCoords = SECTION_COORDS[nextEvent.sectionName]
+        if (nextCoords) {
+          destX = nextCoords.x
+          destY = nextCoords.y
+          returnDuration = nextEvent.time - popupEnd // arrive right at next score time
+        }
+      }
+    }
+
+    const progress = Math.min(1, (currentTime - popupEnd) / returnDuration)
     const eased = easeInOutCubic(progress)
     return {
-      x: sectionX + (neutralX - sectionX) * eased,
-      y: sectionY + (neutralY - sectionY) * eased,
+      x: sectionX + (destX - sectionX) * eased,
+      y: sectionY + (destY - sectionY) * eased,
       showPopup: false,
       popupScore: null
     }
@@ -379,7 +411,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
           return (
             <div
               key={comp.id}
-              className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20"
+              className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${showPopup ? 'z-30' : 'z-20'}`}
               style={{ left: pos.left, top: pos.top }}
             >
               {/* Score popup */}
@@ -469,6 +501,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
             />
             <div className="flex justify-between text-[10px] text-gray-500">
               <span>{formatTime(timeRange.start)}</span>
+              <span className="text-trials-orange font-bold text-xs">{formatTime(currentTime)}</span>
               <span>{formatTime(timeRange.end)}</span>
             </div>
           </div>
