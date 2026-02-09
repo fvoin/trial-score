@@ -30,13 +30,12 @@ const CLASS_COLORS: Record<string, string> = {
   'enduro-trial': '#9ca3af',
 }
 
-// Neutral position (bottom-right corner, normalized)
+// Neutral position (bottom-right corner, normalized) — used only before first score
 const NEUTRAL_POS = { x: 0.88, y: 0.92 }
 
 // Animation timing (in event-time milliseconds)
 const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving
 const POPUP_DURATION = 36 * 1000      // 36 event-sec (~3 real sec at 1x): show score bubble
-const RETURN_DURATION = 60 * 1000     // 60 event-sec (~5 real sec at 1x): move back
 
 // Playback
 const TICK_INTERVAL = 50 // ms real time between updates
@@ -53,12 +52,13 @@ interface ScoreEvent {
   competitorId: number
 }
 
-// For a given competitor at a given time, determine position & popup state
+// For a given competitor at a given time, determine position & popup state.
+// Riders stay at their last scored section (never return to neutral).
 function getCompetitorAnimState(
   compId: number,
   currentTime: number,
   events: ScoreEvent[]
-): { x: number; y: number; showPopup: boolean; popupScore: Score | null } {
+): { x: number; y: number; showPopup: boolean; popupScore: Score | null; isActive: boolean } {
   const compEvents = events.filter(e => e.competitorId === compId)
 
   // Small per-competitor offset at neutral only
@@ -66,103 +66,82 @@ function getCompetitorAnimState(
   const neutralX = NEUTRAL_POS.x + offset
   const neutralY = NEUTRAL_POS.y + offset * 0.3
 
-  // Find the active event and the next event
-  let activeIdx = -1
+  if (compEvents.length === 0) {
+    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null, isActive: false }
+  }
+
+  // Before first event's approach → at neutral
+  const firstApproachStart = compEvents[0].time - APPROACH_DURATION
+  if (currentTime < firstApproachStart) {
+    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null, isActive: false }
+  }
 
   for (let i = 0; i < compEvents.length; i++) {
     const evt = compEvents[i]
-    const approachStart = evt.time - APPROACH_DURATION
-    const cycleEnd = evt.time + POPUP_DURATION + RETURN_DURATION
-    if (currentTime >= approachStart && currentTime <= cycleEnd) {
-      activeIdx = i
-    }
-  }
+    const prevEvt = i > 0 ? compEvents[i - 1] : null
+    const nextEvt = i + 1 < compEvents.length ? compEvents[i + 1] : null
 
-  if (activeIdx === -1) {
-    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
-  }
+    const sectionCoords = SECTION_COORDS[evt.sectionName]
+    if (!sectionCoords) continue
 
-  const activeEvent = compEvents[activeIdx]
-  const nextEvent = activeIdx + 1 < compEvents.length ? compEvents[activeIdx + 1] : null
-
-  const sectionCoords = SECTION_COORDS[activeEvent.sectionName]
-  if (!sectionCoords) {
-    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
-  }
-
-  const sectionX = sectionCoords.x
-  const sectionY = sectionCoords.y
-  const scoreTime = activeEvent.time
-  const popupEnd = scoreTime + POPUP_DURATION
-
-  if (currentTime < scoreTime) {
-    // Phase 1: Approaching section
-    // Determine start position: neutral, or previous section if transitioning directly
+    // Where does approach start & from where?
+    let approachStart = evt.time - APPROACH_DURATION
     let startX = neutralX
     let startY = neutralY
-    let approachStart = activeEvent.time - APPROACH_DURATION
 
-    // Check if previous event's return phase overlaps with this approach
-    if (activeIdx > 0) {
-      const prevEvent = compEvents[activeIdx - 1]
-      const prevPopupEnd = prevEvent.time + POPUP_DURATION
-      const prevReturnEnd = prevPopupEnd + RETURN_DURATION
-      const prevCoords = SECTION_COORDS[prevEvent.sectionName]
-
-      if (prevCoords && approachStart < prevReturnEnd) {
-        // Short break: transition directly from previous section to this one
+    if (prevEvt) {
+      const prevCoords = SECTION_COORDS[prevEvt.sectionName]
+      const prevPopupEnd = prevEvt.time + POPUP_DURATION
+      if (prevCoords) {
         startX = prevCoords.x
         startY = prevCoords.y
-        approachStart = prevPopupEnd // start moving right after prev popup ends
+        // Approach starts either naturally, or right after prev popup (whichever is later)
+        approachStart = Math.max(prevPopupEnd, approachStart)
       }
     }
 
-    const duration = scoreTime - approachStart
-    const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / duration))
-    const eased = easeInOutCubic(progress)
-    return {
-      x: startX + (sectionX - startX) * eased,
-      y: startY + (sectionY - startY) * eased,
-      showPopup: false,
-      popupScore: null
-    }
-  } else if (currentTime < popupEnd) {
-    // Phase 2: At section, showing score
-    return {
-      x: sectionX,
-      y: sectionY,
-      showPopup: true,
-      popupScore: activeEvent.score
-    }
-  } else {
-    // Phase 3: Returning
-    // Determine destination: neutral, or next section if transitioning directly
-    let destX = neutralX
-    let destY = neutralY
-    let returnDuration = RETURN_DURATION
+    const popupEnd = evt.time + POPUP_DURATION
 
-    if (nextEvent) {
-      const nextApproachStart = nextEvent.time - APPROACH_DURATION
-      if (nextApproachStart < popupEnd + RETURN_DURATION) {
-        // Short break: go directly to next section
-        const nextCoords = SECTION_COORDS[nextEvent.sectionName]
-        if (nextCoords) {
-          destX = nextCoords.x
-          destY = nextCoords.y
-          returnDuration = nextEvent.time - popupEnd // arrive right at next score time
-        }
+    // Determine when idle at this section ends (= next event's approach start)
+    let idleEnd = Infinity
+    if (nextEvt) {
+      const nextNaturalApproach = nextEvt.time - APPROACH_DURATION
+      idleEnd = Math.max(popupEnd, nextNaturalApproach)
+    }
+
+    if (currentTime >= approachStart && currentTime < evt.time) {
+      // Approaching this section
+      const duration = evt.time - approachStart
+      const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / duration))
+      const eased = easeInOutCubic(progress)
+      return {
+        x: startX + (sectionCoords.x - startX) * eased,
+        y: startY + (sectionCoords.y - startY) * eased,
+        showPopup: false, popupScore: null, isActive: true
       }
-    }
-
-    const progress = Math.min(1, (currentTime - popupEnd) / returnDuration)
-    const eased = easeInOutCubic(progress)
-    return {
-      x: sectionX + (destX - sectionX) * eased,
-      y: sectionY + (destY - sectionY) * eased,
-      showPopup: false,
-      popupScore: null
+    } else if (currentTime >= evt.time && currentTime < popupEnd) {
+      // At section, showing score popup
+      return {
+        x: sectionCoords.x, y: sectionCoords.y,
+        showPopup: true, popupScore: evt.score, isActive: true
+      }
+    } else if (currentTime >= popupEnd && currentTime < idleEnd) {
+      // Idle at this section, waiting for next
+      return {
+        x: sectionCoords.x, y: sectionCoords.y,
+        showPopup: false, popupScore: null, isActive: false
+      }
     }
   }
+
+  // Past all events: stay at last scored section
+  const lastEvt = compEvents[compEvents.length - 1]
+  const lastCoords = SECTION_COORDS[lastEvt.sectionName]
+  if (lastCoords) {
+    return { x: lastCoords.x, y: lastCoords.y, showPopup: false, popupScore: null, isActive: false }
+  }
+
+  return { x: neutralX, y: neutralY, showPopup: false, popupScore: null, isActive: false }
 }
 
 function easeInOutCubic(t: number): number {
@@ -182,6 +161,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
   const [playing, setPlaying] = useState(false)
   const [speedIdx, setSpeedIdx] = useState(0)
   const [imageAspect, setImageAspect] = useState(DEFAULT_ASPECT)
+  const [selectedCompId, setSelectedCompId] = useState<number | null>(null)
 
   // Map container ref for computing image rect
   const containerRef = useRef<HTMLDivElement>(null)
@@ -192,6 +172,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
   const speedIdxRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const eventsRef = useRef<ScoreEvent[]>([])
+  const selectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Keep refs in sync
   useEffect(() => { speedIdxRef.current = speedIdx }, [speedIdx])
@@ -244,6 +225,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     loadData()
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
+      if (selectedTimerRef.current) clearTimeout(selectedTimerRef.current)
     }
   }, [])
 
@@ -279,7 +261,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
 
       if (scoreEvents.length > 0) {
         const start = scoreEvents[0].time - APPROACH_DURATION - 10000
-        const end = scoreEvents[scoreEvents.length - 1].time + POPUP_DURATION + RETURN_DURATION + 10000
+        const end = scoreEvents[scoreEvents.length - 1].time + POPUP_DURATION + 10000
         setTimeRange({ start, end })
         setCurrentTime(start)
         currentTimeRef.current = start
@@ -354,6 +336,20 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     }
   }
 
+  function handleAvatarTap(compId: number) {
+    if (selectedTimerRef.current) clearTimeout(selectedTimerRef.current)
+    setSelectedCompId(prev => prev === compId ? null : compId)
+    selectedTimerRef.current = setTimeout(() => setSelectedCompId(null), 10000)
+  }
+
+  // Get scores for selected competitor up to current time
+  const selectedComp = selectedCompId != null ? allCompetitors.find(c => c.id === selectedCompId) : null
+  const selectedScores = selectedCompId != null
+    ? events
+        .filter(e => e.competitorId === selectedCompId && e.time <= currentTime)
+        .map(e => ({ section: e.sectionName, score: e.score }))
+    : []
+
   const eventsHappened = events.filter(e => e.time <= currentTime).length
 
   if (loading) {
@@ -404,19 +400,22 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
         {/* Competitor avatars */}
         {allCompetitors.map(comp => {
           const animState = getCompetitorAnimState(comp.id, currentTime, events)
-          const { x, y, showPopup, popupScore } = animState
+          const { x, y, showPopup, popupScore, isActive } = animState
           const borderColor = CLASS_COLORS[comp.primary_class] || '#9ca3af'
           const pos = toPixel(x, y)
+          const isSelected = selectedCompId === comp.id
+          // Active (moving/popup) riders on top, then selected, then idle
+          const zClass = showPopup ? 'z-[25]' : isActive ? 'z-[24]' : isSelected ? 'z-[23]' : 'z-20'
 
           return (
             <div
               key={comp.id}
-              className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${showPopup ? 'z-30' : 'z-20'}`}
+              className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${zClass}`}
               style={{ left: pos.left, top: pos.top }}
             >
               {/* Score popup */}
               {showPopup && popupScore && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in z-[35]">
                   <div className={`px-3 py-1 rounded-lg text-sm font-bold shadow-lg ${
                     popupScore.is_dnf ? 'bg-gray-600 text-white' :
                     popupScore.points === 0 ? 'bg-green-500 text-white' :
@@ -431,8 +430,9 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
 
               {/* Avatar */}
               <div
-                className="w-16 h-16 md:w-[72px] md:h-[72px] rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800"
+                className={`w-16 h-16 md:w-[72px] md:h-[72px] rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800 cursor-pointer ${isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-black' : ''}`}
                 style={{ borderColor }}
+                onClick={() => handleAvatarTap(comp.id)}
               >
                 {comp.photo_url ? (
                   <img
@@ -451,6 +451,33 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
           )
         })}
       </div>
+
+      {/* Selected competitor score card */}
+      {selectedComp && selectedScores.length > 0 && (
+        <div className="bg-black/85 px-3 py-2 z-30 shrink-0 border-t border-gray-700 animate-fade-in">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-white font-bold text-xs">#{selectedComp.number} {selectedComp.name}</span>
+              <button onClick={() => setSelectedCompId(null)} className="text-gray-500 hover:text-white text-xs ml-auto">&times;</button>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {selectedScores.map((s, i) => {
+                const label = s.section.replace('Section ', 'S').replace('Kids ', 'K').replace('Enduro ', 'E')
+                return (
+                  <div key={i} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                    s.score.is_dnf ? 'bg-gray-600 text-white' :
+                    s.score.points === 0 ? 'bg-green-600 text-white' :
+                    s.score.points === 5 ? 'bg-red-500 text-white' :
+                    'bg-trials-orange/90 text-black'
+                  }`}>
+                    {label}: {s.score.is_dnf ? 'DNS' : s.score.points}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Controls bar */}
       <div className="bg-black/90 px-4 py-3 z-30 shrink-0">
