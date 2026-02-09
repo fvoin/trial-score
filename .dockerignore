@@ -19,6 +19,9 @@ dist/
 .idea/
 .vscode/
 
+# Large files at root (already in client/public for build)
+back.JPEG
+
 # OS
 .DS_Store
 Thumbs.db
