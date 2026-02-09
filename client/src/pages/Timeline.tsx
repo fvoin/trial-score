@@ -108,7 +108,6 @@ function getCompetitorAnimState(
   const approachStart = activePhaseStart
   const scoreTime = activeEvent.time
   const popupEnd = scoreTime + POPUP_DURATION
-  const returnEnd = popupEnd + RETURN_DURATION
 
   if (currentTime < scoreTime) {
     // Phase 1: Approaching section
