@@ -35,7 +35,7 @@ const NEUTRAL_POS = { x: 0.88, y: 0.92 }
 
 // Animation timing (in event-time milliseconds)
 const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving
-const POPUP_DURATION = 3 * 1000       // 3 seconds: show score bubble
+const POPUP_DURATION = 6 * 1000       // 6 seconds: show score bubble
 const RETURN_DURATION = 5 * 1000      // 5 seconds after popup: move back
 
 // Playback
@@ -384,8 +384,8 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
             >
               {/* Score popup */}
               {showPopup && popupScore && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 whitespace-nowrap animate-fade-in">
-                  <div className={`px-2 py-0.5 rounded text-xs font-bold shadow-lg ${
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-fade-in">
+                  <div className={`px-3 py-1 rounded-lg text-sm font-bold shadow-lg ${
                     popupScore.is_dnf ? 'bg-gray-600 text-white' :
                     popupScore.points === 0 ? 'bg-green-500 text-white' :
                     popupScore.points === 5 ? 'bg-red-500 text-white' :
@@ -399,7 +399,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
 
               {/* Avatar */}
               <div
-                className="w-8 h-8 md:w-9 md:h-9 rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800"
+                className="w-16 h-16 md:w-[72px] md:h-[72px] rounded-full border-[3px] overflow-hidden shadow-lg bg-gray-800"
                 style={{ borderColor }}
               >
                 {comp.photo_url ? (
@@ -410,7 +410,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
                     draggable={false}
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-white">
+                  <div className="w-full h-full flex items-center justify-center text-base font-bold text-white">
                     {comp.number}
                   </div>
                 )}
