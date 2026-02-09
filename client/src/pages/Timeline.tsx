@@ -35,7 +35,7 @@ const NEUTRAL_POS = { x: 0.88, y: 0.92 }
 
 // Animation timing (in event-time milliseconds)
 const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving
-const POPUP_DURATION = 60 * 1000      // 60 event-sec (~5 real sec at 1x): show score bubble
+const POPUP_DURATION = 36 * 1000      // 36 event-sec (~3 real sec at 1x): show score bubble
 const RETURN_DURATION = 60 * 1000     // 60 event-sec (~5 real sec at 1x): move back
 
 // Playback
@@ -63,26 +63,26 @@ function getCompetitorAnimState(
   // An event is active if currentTime is within [scoreTime - APPROACH, scoreTime + POPUP + RETURN]
   const compEvents = events.filter(e => e.competitorId === compId)
 
-  // Small per-competitor offset to avoid stacking at neutral
+  // Small per-competitor offset to avoid stacking at neutral only
   const offset = ((compId * 7) % 20 - 10) * 0.006
+  const neutralX = NEUTRAL_POS.x + offset
+  const neutralY = NEUTRAL_POS.y + offset * 0.3
 
   let activeEvent: ScoreEvent | null = null
-  let activePhaseStart = 0
 
   for (const evt of compEvents) {
     const approachStart = evt.time - APPROACH_DURATION
     const cycleEnd = evt.time + POPUP_DURATION + RETURN_DURATION
     if (currentTime >= approachStart && currentTime <= cycleEnd) {
       activeEvent = evt
-      activePhaseStart = approachStart
       // Don't break - take the latest active event if overlapping
     }
   }
 
   if (!activeEvent) {
     return {
-      x: NEUTRAL_POS.x + offset,
-      y: NEUTRAL_POS.y + offset * 0.3,
+      x: neutralX,
+      y: neutralY,
       showPopup: false,
       popupScore: null
     }
@@ -90,21 +90,21 @@ function getCompetitorAnimState(
 
   const sectionCoords = SECTION_COORDS[activeEvent.sectionName]
   if (!sectionCoords) {
-    return { x: NEUTRAL_POS.x + offset, y: NEUTRAL_POS.y + offset * 0.3, showPopup: false, popupScore: null }
+    return { x: neutralX, y: neutralY, showPopup: false, popupScore: null }
   }
 
-  const neutralX = NEUTRAL_POS.x + offset
-  const neutralY = NEUTRAL_POS.y + offset * 0.3
-  const sectionX = sectionCoords.x + offset
-  const sectionY = sectionCoords.y + offset * 0.3
+  // Section position is exact — no offset
+  const sectionX = sectionCoords.x
+  const sectionY = sectionCoords.y
 
-  const approachStart = activePhaseStart
+  // Always use fixed APPROACH_DURATION before score time
+  const approachStart = activeEvent.time - APPROACH_DURATION
   const scoreTime = activeEvent.time
   const popupEnd = scoreTime + POPUP_DURATION
 
   if (currentTime < scoreTime) {
     // Phase 1: Approaching section
-    const progress = Math.min(1, (currentTime - approachStart) / APPROACH_DURATION)
+    const progress = Math.min(1, Math.max(0, (currentTime - approachStart) / APPROACH_DURATION))
     const eased = easeInOutCubic(progress)
     return {
       x: neutralX + (sectionX - neutralX) * eased,
@@ -392,7 +392,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
                     popupScore.points === 20 ? 'bg-gray-600 text-white' :
                     'bg-trials-orange text-black'
                   }`}>
-                    #{comp.number}: {popupScore.is_dnf ? 'DNS' : popupScore.points}
+                    {popupScore.is_dnf ? 'DNS' : popupScore.points}
                   </div>
                 </div>
               )}
