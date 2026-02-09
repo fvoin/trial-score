@@ -35,8 +35,8 @@ const NEUTRAL_POS = { x: 0.88, y: 0.92 }
 
 // Animation timing (in event-time milliseconds)
 const APPROACH_DURATION = 60 * 1000   // 1 minute before score: start moving
-const POPUP_DURATION = 6 * 1000       // 6 seconds: show score bubble
-const RETURN_DURATION = 5 * 1000      // 5 seconds after popup: move back
+const POPUP_DURATION = 60 * 1000      // 60 event-sec (~5 real sec at 1x): show score bubble
+const RETURN_DURATION = 60 * 1000     // 60 event-sec (~5 real sec at 1x): move back
 
 // Playback
 const TICK_INTERVAL = 50 // ms real time between updates
