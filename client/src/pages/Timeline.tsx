@@ -10,24 +10,17 @@ import {
 
 // Normalized coordinates for each section on the map image
 const SECTION_COORDS: Record<string, { x: number; y: number }> = {
-  'Section 1': { x: 0.618, y: 0.365 },
-  'Section 2': { x: 0.505, y: 0.218 },
-  'Section 3': { x: 0.413, y: 0.188 },
-  'Section 4': { x: 0.458, y: 0.777 },
-  'Section 5': { x: 0.163, y: 0.859 },
-  'Section 6': { x: 0.514, y: 0.846 },
-  'Kids 1':    { x: 0.309, y: 0.252 },
-  'Kids 2':    { x: 0.305, y: 0.358 },
-  'Kids 3':    { x: 0.163, y: 0.356 },
-  'Enduro 1':  { x: 0.469, y: 0.399 },
-  'Enduro 2':  { x: 0.410, y: 0.444 },
-}
-
-const SECTION_LABELS: Record<string, string> = {
-  'Section 1': '1', 'Section 2': '2', 'Section 3': '3',
-  'Section 4': '4', 'Section 5': '5', 'Section 6': '6',
-  'Kids 1': 'K1', 'Kids 2': 'K2', 'Kids 3': 'K3',
-  'Enduro 1': 'E1', 'Enduro 2': 'E2',
+  'Section 1': { x: 0.595, y: 0.388 },
+  'Section 2': { x: 0.438, y: 0.155 },
+  'Section 3': { x: 0.291, y: 0.107 },
+  'Section 4': { x: 0.303, y: 0.581 },
+  'Section 5': { x: 0.184, y: 0.873 },
+  'Section 6': { x: 0.472, y: 0.802 },
+  'Kids 1':    { x: 0.224, y: 0.208 },
+  'Kids 2':    { x: 0.231, y: 0.352 },
+  'Kids 3':    { x: 0.113, y: 0.359 },
+  'Enduro 1':  { x: 0.416, y: 0.415 },
+  'Enduro 2':  { x: 0.317, y: 0.413 },
 }
 
 const CLASS_COLORS: Record<string, string> = {
@@ -48,9 +41,9 @@ const RETURN_DURATION = 5 * 1000      // 5 seconds after popup: move back
 // Playback
 const TICK_INTERVAL = 50 // ms real time between updates
 const SPEED_OPTIONS = [
-  { label: '1x', multiplier: 2 * 60 * 1000 },   // 2 event-min per real sec
-  { label: '2x', multiplier: 4 * 60 * 1000 },   // 4 event-min per real sec
-  { label: '4x', multiplier: 8 * 60 * 1000 },   // 8 event-min per real sec
+  { label: '1x', multiplier: 12 * 1000 },        // 12 event-sec per real sec
+  { label: '2x', multiplier: 24 * 1000 },        // 24 event-sec per real sec
+  { label: '4x', multiplier: 48 * 1000 },        // 48 event-sec per real sec
 ]
 
 interface ScoreEvent {
@@ -150,7 +143,7 @@ const DEFAULT_ASPECT = 16 / 9
 export default function Timeline({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(true)
   const [allCompetitors, setAllCompetitors] = useState<Competitor[]>([])
-  const [sections, setSections] = useState<Section[]>([])
+  const [, setSections] = useState<Section[]>([])
   const [events, setEvents] = useState<ScoreEvent[]>([])
   const [timeRange, setTimeRange] = useState({ start: 0, end: 0 })
   const [currentTime, setCurrentTime] = useState(0)
@@ -374,28 +367,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
           }}
         />
 
-        {/* Section markers - positioned relative to image rect */}
-        {sections.map(sec => {
-          const coords = SECTION_COORDS[sec.name]
-          if (!coords) return null
-          const label = SECTION_LABELS[sec.name] || sec.name
-          const pos = toPixel(coords.x, coords.y)
-          return (
-            <div
-              key={sec.id}
-              className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10"
-              style={{ left: pos.left, top: pos.top }}
-            >
-              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold shadow-lg border-2 ${
-                sec.type === 'kids' ? 'bg-yellow-400/90 border-yellow-300 text-black' :
-                sec.type === 'enduro' ? 'bg-gray-600/90 border-gray-400 text-white' :
-                'bg-white/90 border-white text-black'
-              }`}>
-                {label}
-              </div>
-            </div>
-          )
-        })}
+        {/* Section labels are already on the background image */}
 
         {/* Competitor avatars */}
         {allCompetitors.map(comp => {
