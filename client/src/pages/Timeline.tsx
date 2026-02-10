@@ -346,7 +346,10 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
     : []
 
   const eventsHappened = events.filter(e => e.time <= currentTime).length
-  const filteredCompetitors = allCompetitors.filter(c => visibleClasses.has(c.primary_class))
+  const filteredCompetitors = allCompetitors.filter(c =>
+    visibleClasses.has(c.primary_class) ||
+    (visibleClasses.has('enduro-trial') && c.enduro_trial === 1)
+  )
 
   if (loading) {
     return (
