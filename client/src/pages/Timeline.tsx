@@ -445,7 +445,7 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
             const pos = toPixel(x, y)
             const isSelected = selectedCompId === comp.id
             const isFocusMode = selectedCompId != null
-            const zIndex = zMap.get(comp.id) ?? 19
+            const zIndex = isSelected ? 200 : (zMap.get(comp.id) ?? 19)
             // In focus mode: dim all except the selected rider
             const focusOpacity = isFocusMode && !isSelected ? 0.2 : 1
             const finalOpacity = animOpacity * focusOpacity
@@ -494,6 +494,48 @@ export default function Timeline({ onBack }: { onBack: () => void }) {
             )
           })
         })()}
+
+        {/* Live ranking overlay — top-right, hidden in focus mode */}
+        {selectedCompId == null && (
+          <div className="absolute top-2 right-2 z-[100] pointer-events-none">
+            <div className="bg-black/75 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-gray-700/50">
+              {CLASS_FILTERS
+                .filter(cf => visibleClasses.has(cf.key))
+                .map(cf => {
+                  // Compute average score per rider in this class up to currentTime
+                  const classComps = allCompetitors.filter(c => c.primary_class === cf.key)
+                  const ranked: { name: string; avg: number }[] = []
+                  for (const comp of classComps) {
+                    const compScores = events.filter(e => e.competitorId === comp.id && e.time <= currentTime)
+                    if (compScores.length === 0) continue
+                    const total = compScores.reduce((sum, e) => sum + (e.score.points ?? 0), 0)
+                    ranked.push({ name: comp.name, avg: total / compScores.length })
+                  }
+                  ranked.sort((a, b) => a.avg - b.avg)
+                  const top3 = ranked.slice(0, 3)
+                  if (top3.length === 0) return null
+
+                  const medals = ['#fbbf24', '#d1d5db', '#d97706']
+                  return (
+                    <div key={cf.key} className="mb-1 last:mb-0">
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center" style={{ backgroundColor: cf.color, color: '#000' }}>
+                          {cf.label}
+                        </span>
+                      </div>
+                      {top3.map((r, i) => (
+                        <div key={i} className="flex items-center gap-1 pl-1">
+                          <span className="text-[9px] font-bold w-3 text-right" style={{ color: medals[i] || '#9ca3af' }}>{i + 1}</span>
+                          <span className="text-[9px] text-gray-300 truncate max-w-[80px]">{r.name}</span>
+                          <span className="text-[9px] text-gray-500 ml-auto">{r.avg.toFixed(1)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )}
 
         {/* Selected competitor score card — absolute overlay inside map, doesn't affect layout */}
         {selectedComp && selectedScores.length > 0 && (
