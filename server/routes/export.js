@@ -1,9 +1,103 @@
 import express from 'express';
+import archiver from 'archiver';
+import AdmZip from 'adm-zip';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { getCompetitors, getScores, getLeaderboard, getSettings, getSections, importData } from '../db.js';
 
 const router = express.Router();
+const uploadZip = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
-// GET export all data as JSON
+const baseDir = fs.existsSync('/app/data') ? '/app/data' : path.join(path.dirname(new URL(import.meta.url).pathname), '../..');
+const uploadsDir = path.join(baseDir, 'uploads');
+
+// GET export full event as ZIP (data.json + photos)
+router.get('/event', (req, res) => {
+  try {
+    const data = {
+      exported_at: new Date().toISOString(),
+      settings: getSettings(),
+      competitors: getCompetitors(),
+      sections: getSections(),
+      scores: getScores(),
+      leaderboard: getLeaderboard()
+    };
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="trial-event-${Date.now()}.zip"`);
+    archive.pipe(res);
+
+    archive.append(JSON.stringify(data, null, 2), { name: 'data.json' });
+
+    if (fs.existsSync(uploadsDir)) {
+      const photos = fs.readdirSync(uploadsDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+      for (const photo of photos) {
+        archive.file(path.join(uploadsDir, photo), { name: `photos/${photo}` });
+      }
+    }
+
+    archive.finalize();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST import full event from ZIP
+router.post('/event', uploadZip.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const zip = new AdmZip(req.file.buffer);
+    const dataEntry = zip.getEntry('data.json');
+    if (!dataEntry) {
+      return res.status(400).json({ error: 'Invalid backup: missing data.json' });
+    }
+
+    const data = JSON.parse(dataEntry.getData().toString('utf8'));
+    const { settings, competitors, scores } = data;
+
+    if (!competitors || !scores) {
+      return res.status(400).json({ error: 'Invalid backup: missing competitors or scores' });
+    }
+
+    // Restore photos
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const photoEntries = zip.getEntries().filter(e => e.entryName.startsWith('photos/') && !e.isDirectory);
+    for (const entry of photoEntries) {
+      const filename = path.basename(entry.entryName);
+      fs.writeFileSync(path.join(uploadsDir, filename), entry.getData());
+    }
+
+    const result = importData({ settings, competitors, scores });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('competitor_update');
+      io.emit('score_update');
+    }
+
+    res.json({
+      success: true,
+      imported: {
+        competitors: result.competitors,
+        scores: result.scores,
+        photos: photoEntries.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET export all data as JSON (kept for backward compatibility)
 router.get('/json', (req, res) => {
   try {
     const data = {

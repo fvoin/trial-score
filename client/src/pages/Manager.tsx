@@ -12,9 +12,9 @@ import {
   getLeaderboard,
   getAuthRequired,
   verifyPin,
-  getExportJsonUrl,
+  getExportEventUrl,
   getExportCsvUrl,
-  importJson,
+  importEvent,
   deleteAllScores,
   type Competitor,
   type Settings,
@@ -22,7 +22,7 @@ import {
   type Section,
   type LeaderboardEntry
 } from '../api'
-import { UserIcon, SettingsIcon, PlusIcon, CameraIcon, UploadIcon, TrashIcon, HistoryIcon, FileJsonIcon, FileSpreadsheetIcon, DownloadIcon, LoaderIcon } from '../components/Icons'
+import { UserIcon, SettingsIcon, PlusIcon, CameraIcon, UploadIcon, TrashIcon, HistoryIcon, FileSpreadsheetIcon, DownloadIcon, LoaderIcon } from '../components/Icons'
 import PinModal, { getPinCookie } from '../components/PinModal'
 
 const CLASSES = [
@@ -246,7 +246,7 @@ export default function Manager() {
     }
   }
 
-  async function handleImportJson(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImportEvent(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     
@@ -254,11 +254,8 @@ export default function Manager() {
     setError('')
     
     try {
-      const text = await file.text()
-      const data = JSON.parse(text)
-      const result = await importJson(data)
-      alert(`Imported ${result.imported.competitors} competitors and ${result.imported.scores} scores`)
-      // Reload data
+      const result = await importEvent(file)
+      alert(`Imported ${result.imported.competitors} competitors, ${result.imported.scores} scores, ${result.imported.photos} photos`)
       loadData()
       setShowSettings(false)
     } catch (err) {
@@ -266,7 +263,6 @@ export default function Manager() {
       setError(err instanceof Error ? err.message : 'Import failed')
     } finally {
       setImporting(false)
-      // Reset file input
       e.target.value = ''
     }
   }
@@ -791,14 +787,14 @@ export default function Manager() {
 
               {/* Export/Import buttons */}
               <div className="border-t border-gray-700 pt-4 mt-4">
-                <label className="block text-sm text-gray-400 mb-2">Data Backup</label>
+                <label className="block text-sm text-gray-400 mb-2">Event Backup</label>
                 <div className="flex gap-2 mb-2">
                   <a
-                    href={getExportJsonUrl()}
+                    href={getExportEventUrl()}
                     download
                     className="flex-1 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-sm flex items-center justify-center gap-2"
                   >
-                    <FileJsonIcon className="w-4 h-4" /> Export JSON
+                    <DownloadIcon className="w-4 h-4" /> Export Event
                   </a>
                   <a
                     href={getExportCsvUrl()}
@@ -809,11 +805,11 @@ export default function Manager() {
                   </a>
                 </div>
                 <label className={`w-full py-2 bg-trials-accent/20 border border-trials-accent rounded-lg hover:bg-trials-accent/30 transition-colors text-sm cursor-pointer flex items-center justify-center gap-2 ${importing ? 'opacity-50' : ''}`}>
-                  {importing ? <><LoaderIcon className="w-4 h-4 animate-spin" /> Importing...</> : <><DownloadIcon className="w-4 h-4" /> Import JSON Backup</>}
+                  {importing ? <><LoaderIcon className="w-4 h-4 animate-spin" /> Importing...</> : <><UploadIcon className="w-4 h-4" /> Import Event Backup</>}
                   <input
                     type="file"
-                    accept=".json,application/json"
-                    onChange={handleImportJson}
+                    accept=".zip,application/zip"
+                    onChange={handleImportEvent}
                     disabled={importing}
                     className="hidden"
                   />

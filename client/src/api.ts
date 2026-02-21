@@ -216,19 +216,20 @@ export async function getAuthRequired(): Promise<{ manager: boolean; judge: bool
 }
 
 // Export
-export function getExportJsonUrl(): string {
-  return `${API_BASE}/export/json`;
+export function getExportEventUrl(): string {
+  return `${API_BASE}/export/event`;
 }
 
 export function getExportCsvUrl(): string {
   return `${API_BASE}/export/csv`;
 }
 
-export async function importJson(data: unknown): Promise<{ success: boolean; imported: { competitors: number; scores: number } }> {
-  const res = await fetch(`${API_BASE}/export/json`, {
+export async function importEvent(file: File): Promise<{ success: boolean; imported: { competitors: number; scores: number; photos: number } }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${API_BASE}/export/event`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    body: formData
   });
   if (!res.ok) {
     const error = await res.json();
