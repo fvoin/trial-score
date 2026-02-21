@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import {
   getScores,
   getScoresBySection,
@@ -8,6 +10,7 @@ import {
   updateScore,
   deleteScore,
   deleteAllScores,
+  deleteAllData,
   getSections,
   getLeaderboard
 } from '../db.js';
@@ -152,6 +155,31 @@ router.delete('/all', (req, res) => {
     const io = req.app.get('io');
     io.emit('leaderboard', getLeaderboard());
     
+    res.status(204).send();
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// DELETE everything: competitors, scores, and photos
+router.delete('/everything', (req, res) => {
+  try {
+    deleteAllData();
+
+    const baseDir = fs.existsSync('/app/data') ? '/app/data' : path.join(path.dirname(new URL(import.meta.url).pathname), '../..');
+    const uploadsDir = path.join(baseDir, 'uploads');
+    if (fs.existsSync(uploadsDir)) {
+      const photos = fs.readdirSync(uploadsDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+      for (const photo of photos) {
+        fs.unlinkSync(path.join(uploadsDir, photo));
+      }
+    }
+
+    const io = req.app.get('io');
+    io.emit('competitor_update');
+    io.emit('score_update');
+    io.emit('leaderboard', getLeaderboard());
+
     res.status(204).send();
   } catch (error) {
     res.status(400).json({ error: error.message });

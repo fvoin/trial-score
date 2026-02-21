@@ -16,6 +16,7 @@ import {
   getExportCsvUrl,
   importEvent,
   deleteAllScores,
+  deleteEverything,
   type Competitor,
   type Settings,
   type Score,
@@ -224,6 +225,7 @@ export default function Manager() {
   const [savingSettings, setSavingSettings] = useState(false)
   const [importing, setImporting] = useState(false)
   const [deleteConfirmStep, setDeleteConfirmStep] = useState(0) // 0=none, 1=first confirm, 2=deleting
+  const [deleteAllStep, setDeleteAllStep] = useState(0)
   
   async function handleDeleteAllScores() {
     if (deleteConfirmStep === 0) {
@@ -235,13 +237,35 @@ export default function Manager() {
       try {
         await deleteAllScores()
         setAllScores([])
-        loadData() // Reload to update leaderboard
+        loadData()
         setDeleteConfirmStep(0)
         alert('All scores deleted successfully')
       } catch (err) {
         console.error('Delete all scores error:', err)
         setError('Failed to delete all scores')
         setDeleteConfirmStep(0)
+      }
+    }
+  }
+
+  async function handleDeleteAll() {
+    if (deleteAllStep === 0) {
+      setDeleteAllStep(1)
+      return
+    }
+    if (deleteAllStep === 1) {
+      setDeleteAllStep(2)
+      try {
+        await deleteEverything()
+        setAllScores([])
+        loadData()
+        setDeleteAllStep(0)
+        setShowSettings(false)
+        alert('All data deleted successfully')
+      } catch (err) {
+        console.error('Delete all error:', err)
+        setError('Failed to delete all data')
+        setDeleteAllStep(0)
       }
     }
   }
@@ -839,6 +863,27 @@ export default function Manager() {
                 </button>
                 {deleteConfirmStep === 1 && (
                   <p className="text-xs text-red-400 mt-1 text-center">This will permanently delete all scores. Cannot be undone.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDeleteAll}
+                  onBlur={() => deleteAllStep === 1 && setDeleteAllStep(0)}
+                  disabled={deleteAllStep === 2}
+                  className={`w-full py-2 mt-2 rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${
+                    deleteAllStep === 0
+                      ? 'bg-red-900/30 border border-red-900 text-red-400 hover:bg-red-900/50'
+                      : deleteAllStep === 1
+                      ? 'bg-red-600 border border-red-500 text-white animate-pulse'
+                      : 'bg-red-900/50 text-red-300 opacity-50'
+                  }`}
+                >
+                  <TrashIcon className="w-4 h-4" />
+                  {deleteAllStep === 0 && 'Delete All Data'}
+                  {deleteAllStep === 1 && 'Click again to confirm!'}
+                  {deleteAllStep === 2 && 'Deleting...'}
+                </button>
+                {deleteAllStep === 1 && (
+                  <p className="text-xs text-red-400 mt-1 text-center">This will delete ALL competitors, scores, and photos. Cannot be undone.</p>
                 )}
               </div>
 

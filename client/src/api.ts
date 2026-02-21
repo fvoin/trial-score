@@ -175,6 +175,13 @@ export async function deleteAllScores(): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete all scores');
 }
 
+export async function deleteEverything(): Promise<void> {
+  const res = await fetch(`${API_BASE}/scores/everything`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error('Failed to delete all data');
+}
+
 // Leaderboard
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   const res = await fetch(`${API_BASE}/scores/leaderboard`);
