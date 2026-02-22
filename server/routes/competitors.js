@@ -86,7 +86,11 @@ router.get('/:id', (req, res) => {
 // POST create competitor
 router.post('/', upload.single('photo'), async (req, res) => {
   try {
-    const { number, name, primary_class, enduro_trial } = req.body;
+    const { number, name } = req.body;
+    let classes = req.body.classes;
+    if (typeof classes === 'string') {
+      try { classes = JSON.parse(classes); } catch { classes = [classes]; }
+    }
     
     let photo_url = null;
     if (req.file) {
@@ -96,8 +100,7 @@ router.post('/', upload.single('photo'), async (req, res) => {
     const competitor = createCompetitor({
       number: parseInt(number),
       name,
-      primary_class,
-      enduro_trial: enduro_trial === 'true' || enduro_trial === '1' ? 1 : 0,
+      classes: Array.isArray(classes) ? classes : [],
       photo_url
     });
     
@@ -113,7 +116,11 @@ router.post('/', upload.single('photo'), async (req, res) => {
 // PUT update competitor
 router.put('/:id', upload.single('photo'), async (req, res) => {
   try {
-    const { number, name, primary_class, enduro_trial } = req.body;
+    const { number, name } = req.body;
+    let classes = req.body.classes;
+    if (typeof classes === 'string') {
+      try { classes = JSON.parse(classes); } catch { classes = [classes]; }
+    }
     
     let photo_url = null;
     if (req.file) {
@@ -123,8 +130,7 @@ router.put('/:id', upload.single('photo'), async (req, res) => {
     const competitor = updateCompetitor(req.params.id, {
       number: parseInt(number),
       name,
-      primary_class,
-      enduro_trial: enduro_trial === 'true' || enduro_trial === '1' ? 1 : 0,
+      classes: Array.isArray(classes) ? classes : undefined,
       photo_url
     });
     

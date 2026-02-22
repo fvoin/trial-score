@@ -16,15 +16,7 @@ router.get('/', (req, res) => {
 // PUT update settings
 router.put('/', (req, res) => {
   try {
-    const { event_name, event_date, email_backup_address, email_backup_enabled } = req.body;
-    
-    const settings = updateSettings({
-      event_name,
-      event_date,
-      email_backup_address,
-      email_backup_enabled: email_backup_enabled ? 1 : 0
-    });
-    
+    const settings = updateSettings(req.body);
     res.json(settings);
   } catch (error) {
     res.status(400).json({ error: error.message });

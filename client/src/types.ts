@@ -1,11 +1,8 @@
-export type CompetitorClass = 'kids' | 'clubman' | 'advanced' | 'enduro-trial';
-
 export interface Competitor {
   id: number;
   number: number;
   name: string;
-  primary_class: CompetitorClass;
-  enduro_trial: boolean;
+  classes: string[];
   photo_url: string | null;
   created_at: string;
 }
@@ -13,8 +10,14 @@ export interface Competitor {
 export interface Section {
   id: number;
   name: string;
-  type: 'main' | 'enduro' | 'kids';
-  order_num: number;
+}
+
+export interface ClassConfig {
+  id: string;
+  name: string;
+  laps: number;
+  section_ids: number[];
+  color: string;
 }
 
 export interface Score {
@@ -37,8 +40,8 @@ export interface ScoreWithDetails extends Score {
 export interface Settings {
   event_name: string;
   event_date: string;
-  email_backup_address: string;
-  email_backup_enabled: boolean;
+  sections: Section[];
+  classes: ClassConfig[];
 }
 
 export interface Standings {

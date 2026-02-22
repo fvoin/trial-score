@@ -4,79 +4,144 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Use /app/data for Railway volume, otherwise local data.json
 const dataDir = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, '..');
 const dbPath = path.join(dataDir, 'data.json');
 console.log('Database path:', dbPath);
 
-// Default database structure
 const defaultDb = {
   competitors: [],
-  sections: [],
   scores: [],
   settings: {
     id: 1,
     event_name: 'Moto Trial Event',
     event_date: null,
-    email_backup_address: null,
-    email_backup_enabled: 0
+    sections: [],
+    classes: []
   },
   nextIds: {
     competitor: 1,
-    score: 1
+    score: 1,
+    section: 1,
+    class: 1
   }
 };
 
-// Load or create database
 function loadDb() {
   try {
     if (fs.existsSync(dbPath)) {
-      const data = fs.readFileSync(dbPath, 'utf-8');
-      return JSON.parse(data);
+      const data = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+      return migrateIfNeeded(data);
     }
   } catch (err) {
     console.error('Error loading database:', err);
   }
-  return { ...defaultDb };
+  return JSON.parse(JSON.stringify(defaultDb));
 }
 
-function saveDb(db) {
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+function migrateIfNeeded(data) {
+  const hasOldSections = Array.isArray(data.sections) && data.sections.length > 0 && data.sections[0]?.type;
+  const hasOldCompetitors = data.competitors?.length > 0 && data.competitors[0]?.primary_class !== undefined;
+
+  if (!hasOldSections && !hasOldCompetitors) return data;
+
+  console.log('Migrating database to dynamic classes format...');
+
+  if (!data.settings) data.settings = {};
+  if (!data.nextIds) data.nextIds = {};
+
+  // Migrate sections from db.sections to settings.sections
+  if (hasOldSections) {
+    const oldSections = data.sections;
+    data.settings.sections = oldSections.map(s => ({ id: s.id, name: s.name }));
+
+    const mainIds = oldSections.filter(s => s.type === 'main').map(s => s.id);
+    const kidsIds = oldSections.filter(s => s.type === 'kids').map(s => s.id);
+    const enduroIds = oldSections.filter(s => s.type === 'enduro').map(s => s.id);
+
+    const classes = [];
+    if (mainIds.length > 0) {
+      classes.push({ id: 'cls_advanced', name: 'Advanced', laps: 3, section_ids: [...mainIds], color: '#ef4444' });
+      classes.push({ id: 'cls_clubman', name: 'Clubman', laps: 3, section_ids: [...mainIds], color: '#10b981' });
+    }
+    if (kidsIds.length > 0) {
+      classes.push({ id: 'cls_kids', name: 'Kids', laps: 3, section_ids: kidsIds, color: '#facc15' });
+    }
+    if (enduroIds.length > 0) {
+      classes.push({ id: 'cls_enduro', name: 'Enduro Trial', laps: 3, section_ids: enduroIds, color: '#9ca3af' });
+    }
+    data.settings.classes = classes;
+
+    const maxSecId = Math.max(0, ...oldSections.map(s => s.id));
+    data.nextIds.section = maxSecId + 1;
+    data.nextIds.class = 1;
+    delete data.sections;
+  }
+
+  // Migrate competitors
+  if (hasOldCompetitors) {
+    data.competitors = data.competitors.map(c => {
+      const newClasses = [];
+      if (c.primary_class === 'kids') newClasses.push('cls_kids');
+      else if (c.primary_class === 'clubman') newClasses.push('cls_clubman');
+      else if (c.primary_class === 'advanced') newClasses.push('cls_advanced');
+      else if (c.primary_class === 'enduro-trial') newClasses.push('cls_enduro');
+
+      if (c.enduro_trial === 1 && !newClasses.includes('cls_enduro')) {
+        newClasses.push('cls_enduro');
+      }
+
+      const { primary_class, enduro_trial, ...rest } = c;
+      return { ...rest, classes: newClasses };
+    });
+  }
+
+  saveDb(data);
+  console.log('Migration complete.');
+  return data;
+}
+
+function saveDb(database) {
+  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2));
 }
 
 let db = loadDb();
 
 export function initDb() {
-  // Initialize sections if not exist or add missing types
-  const hasKidsSections = db.sections.some(s => s.type === 'kids');
-  
-  if (db.sections.length === 0) {
-    let id = 1;
-    // Main sections 1-6 (for Clubman/Advanced)
-    for (let i = 1; i <= 6; i++) {
-      db.sections.push({ id: id++, name: `Section ${i}`, type: 'main', section_order: i });
-    }
-    // Kids sections 1-3
-    for (let i = 1; i <= 3; i++) {
-      db.sections.push({ id: id++, name: `Kids ${i}`, type: 'kids', section_order: i });
-    }
-    // Enduro sections 1-2
-    for (let i = 1; i <= 2; i++) {
-      db.sections.push({ id: id++, name: `Enduro ${i}`, type: 'enduro', section_order: i });
-    }
-    saveDb(db);
-  } else if (!hasKidsSections) {
-    // Add kids sections if they don't exist
-    const maxId = Math.max(...db.sections.map(s => s.id));
-    for (let i = 1; i <= 3; i++) {
-      db.sections.push({ id: maxId + i, name: `Kids ${i}`, type: 'kids', section_order: i });
-    }
+  if (!db.settings.sections) db.settings.sections = [];
+  if (!db.settings.classes) db.settings.classes = [];
+  if (!db.nextIds.section) db.nextIds.section = 1;
+  if (!db.nextIds.class) db.nextIds.class = 1;
+
+  if (db.settings.sections.length === 0 && db.settings.classes.length === 0) {
+    const sections = [];
+    let sid = 1;
+    for (let i = 1; i <= 6; i++) sections.push({ id: sid++, name: `Section ${i}` });
+    for (let i = 1; i <= 3; i++) sections.push({ id: sid++, name: `Kids ${i}` });
+
+    db.settings.sections = sections;
+    db.nextIds.section = sid;
+
+    db.settings.classes = [
+      { id: 'cls_1', name: 'Advanced', laps: 3, section_ids: [1,2,3,4,5,6], color: '#ef4444' },
+      { id: 'cls_2', name: 'Clubman', laps: 3, section_ids: [1,2,3,4,5,6], color: '#10b981' },
+      { id: 'cls_3', name: 'Kids', laps: 3, section_ids: [7,8,9], color: '#facc15' },
+    ];
+    db.nextIds.class = 4;
+
     saveDb(db);
   }
+
+  // Remove legacy db.sections if it still exists
+  if (db.sections) {
+    delete db.sections;
+    saveDb(db);
+  }
+
   console.log('Database initialized');
 }
 
-// Competitor queries
+// --- Competitors ---
+
 export function getCompetitors() {
   return [...db.competitors].sort((a, b) => a.number - b.number);
 }
@@ -91,17 +156,15 @@ export function createCompetitor(data) {
     id,
     number: data.number,
     name: data.name,
-    primary_class: data.primary_class,
-    enduro_trial: data.enduro_trial,
+    classes: Array.isArray(data.classes) ? data.classes : [],
     photo_url: data.photo_url,
     created_at: new Date().toISOString()
   };
-  
-  // Check for duplicate number
+
   if (db.competitors.some(c => c.number === competitor.number)) {
     throw new Error('Competitor number already exists');
   }
-  
+
   db.competitors.push(competitor);
   saveDb(db);
   return competitor;
@@ -110,18 +173,16 @@ export function createCompetitor(data) {
 export function updateCompetitor(id, data) {
   const index = db.competitors.findIndex(c => c.id === parseInt(id));
   if (index === -1) throw new Error('Competitor not found');
-  
-  // Check for duplicate number (excluding current)
+
   if (db.competitors.some(c => c.number === data.number && c.id !== parseInt(id))) {
     throw new Error('Competitor number already exists');
   }
-  
+
   db.competitors[index] = {
     ...db.competitors[index],
     number: data.number,
     name: data.name,
-    primary_class: data.primary_class,
-    enduro_trial: data.enduro_trial,
+    classes: Array.isArray(data.classes) ? data.classes : db.competitors[index].classes,
     photo_url: data.photo_url || db.competitors[index].photo_url
   };
   saveDb(db);
@@ -135,19 +196,24 @@ export function deleteCompetitor(id) {
   saveDb(db);
 }
 
-// Section queries
+// --- Sections (from settings) ---
+
 export function getSections() {
-  return [...db.sections].sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'main' ? -1 : 1;
-    return a.section_order - b.section_order;
-  });
+  return db.settings.sections || [];
 }
 
 export function getSection(id) {
-  return db.sections.find(s => s.id === parseInt(id));
+  return (db.settings.sections || []).find(s => s.id === parseInt(id));
 }
 
-// Score queries
+// --- Classes (from settings) ---
+
+export function getClasses() {
+  return db.settings.classes || [];
+}
+
+// --- Scores ---
+
 export function getScores() {
   return db.scores.map(s => {
     const competitor = getCompetitor(s.competitor_id);
@@ -156,8 +222,7 @@ export function getScores() {
       ...s,
       competitor_name: competitor?.name,
       competitor_number: competitor?.number,
-      section_name: section?.name,
-      section_type: section?.type
+      section_name: section?.name
     };
   }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
@@ -188,14 +253,11 @@ export function getScoresByCompetitor(competitorId) {
       const section = getSection(s.section_id);
       return {
         ...s,
-        section_name: section?.name,
-        section_type: section?.type,
-        section_order: section?.section_order
+        section_name: section?.name
       };
     })
     .sort((a, b) => {
-      if (a.section_type !== b.section_type) return a.section_type === 'main' ? -1 : 1;
-      if (a.section_order !== b.section_order) return a.section_order - b.section_order;
+      if (a.section_id !== b.section_id) return a.section_id - b.section_id;
       return a.lap - b.lap;
     });
 }
@@ -206,75 +268,69 @@ export function getNextLap(competitorId, sectionId) {
   const scores = db.scores.filter(
     s => s.competitor_id === numCompId && s.section_id === numSecId
   );
-  const maxLap = scores.reduce((max, s) => Math.max(max, s.lap), 0);
-  return maxLap + 1;
+  return scores.reduce((max, s) => Math.max(max, s.lap), 0) + 1;
 }
 
-// Check if a competitor can start a new lap
-// Rule: must complete ALL sections of the same type in current lap before starting next lap
-// Lap tracking is SEPARATE for: main sections, kids sections, and enduro sections
+// Lap restriction: per-class. Must complete all sections of the relevant class(es)
+// in the current lap before advancing.
 export function canStartNewLap(competitorId, sectionId) {
   const numCompId = parseInt(competitorId);
   const numSecId = sectionId ? parseInt(sectionId) : null;
   const competitor = getCompetitor(numCompId);
-  if (!competitor) return { canScore: true, currentLap: 1, incompleteSections: [] };
-  
-  // Determine required sections based on the section being scored
-  const allSections = getSections();
-  const currentSection = numSecId ? getSection(numSecId) : null;
-  let requiredSections;
-  
-  // If scoring an enduro section, only check enduro sections
-  if (currentSection?.type === 'enduro') {
-    requiredSections = allSections.filter(s => s.type === 'enduro');
-  }
-  // If scoring a kids section, only check kids sections
-  else if (currentSection?.type === 'kids') {
-    requiredSections = allSections.filter(s => s.type === 'kids');
-  }
-  // For main sections (or if no section specified), check based on primary class
-  else if (competitor.primary_class === 'kids') {
-    requiredSections = allSections.filter(s => s.type === 'kids');
-  } else if (competitor.primary_class === 'enduro-trial') {
-    requiredSections = allSections.filter(s => s.type === 'enduro');
-  } else {
-    requiredSections = allSections.filter(s => s.type === 'main');
-  }
-  
-  // Get all scores for this competitor at required sections
-  const competitorScores = db.scores.filter(s => 
-    s.competitor_id === numCompId && 
-    requiredSections.some(rs => rs.id === s.section_id)
+  if (!competitor) return { canScore: true, currentLap: 1, incompleteSections: [], maxLap: 3 };
+
+  const classes = getClasses();
+  const competitorClasses = competitor.classes || [];
+
+  // Find classes this competitor is in that include the target section
+  const relevantClasses = classes.filter(cls =>
+    competitorClasses.includes(cls.id) && cls.section_ids.includes(numSecId)
   );
-  
-  // Find the maximum lap number at any required section
-  let maxLap = 0;
-  for (const section of requiredSections) {
-    const sectionScores = competitorScores.filter(s => s.section_id === section.id);
-    const sectionMaxLap = sectionScores.reduce((max, s) => Math.max(max, s.lap), 0);
-    maxLap = Math.max(maxLap, sectionMaxLap);
+
+  if (relevantClasses.length === 0) {
+    return { canScore: true, currentLap: 1, incompleteSections: [], maxLap: 3 };
   }
-  
-  if (maxLap === 0) {
-    // No scores yet, can start lap 1
-    return { canScore: true, currentLap: 1, incompleteSections: [] };
-  }
-  
-  // Check if all required sections are completed for maxLap
-  const incompleteSections = [];
-  for (const section of requiredSections) {
-    const sectionScore = competitorScores.find(
-      s => s.section_id === section.id && s.lap === maxLap
+
+  // Check each relevant class; all must allow advancement
+  let worstIncompleteSections = [];
+  let currentLap = 1;
+  let maxAllowedLap = Math.max(...relevantClasses.map(cls => cls.laps));
+
+  for (const cls of relevantClasses) {
+    const classSectionIds = cls.section_ids;
+
+    const competitorScores = db.scores.filter(s =>
+      s.competitor_id === numCompId && classSectionIds.includes(s.section_id)
     );
-    if (!sectionScore) {
-      incompleteSections.push(section.name);
+
+    let classMaxLap = 0;
+    for (const secId of classSectionIds) {
+      const secScores = competitorScores.filter(s => s.section_id === secId);
+      const secMaxLap = secScores.reduce((max, s) => Math.max(max, s.lap), 0);
+      classMaxLap = Math.max(classMaxLap, secMaxLap);
+    }
+
+    if (classMaxLap === 0) continue;
+
+    currentLap = Math.max(currentLap, classMaxLap);
+
+    const sections = getSections();
+    for (const secId of classSectionIds) {
+      const hasScore = competitorScores.some(s => s.section_id === secId && s.lap === classMaxLap);
+      if (!hasScore) {
+        const sec = sections.find(s => s.id === secId);
+        if (sec && !worstIncompleteSections.includes(sec.name)) {
+          worstIncompleteSections.push(sec.name);
+        }
+      }
     }
   }
-  
+
   return {
-    canScore: incompleteSections.length === 0,
-    currentLap: maxLap,
-    incompleteSections
+    canScore: worstIncompleteSections.length === 0,
+    currentLap,
+    incompleteSections: worstIncompleteSections,
+    maxLap: maxAllowedLap
   };
 }
 
@@ -290,30 +346,27 @@ export function createScore(data) {
     created_at: new Date().toISOString(),
     updated_at: null
   };
-  
-  // Check for duplicate
+
   const exists = db.scores.some(
-    s => s.competitor_id === score.competitor_id && 
-         s.section_id === score.section_id && 
+    s => s.competitor_id === score.competitor_id &&
+         s.section_id === score.section_id &&
          s.lap === score.lap
   );
   if (exists) {
     throw new Error('Score already exists for this lap');
   }
-  
+
   db.scores.push(score);
   saveDb(db);
-  
+
   const competitor = getCompetitor(score.competitor_id);
   const section = getSection(score.section_id);
   return {
     ...score,
     competitor_name: competitor?.name,
     competitor_number: competitor?.number,
-    competitor_class: competitor?.primary_class,
-    competitor_enduro: competitor?.enduro_trial,
-    section_name: section?.name,
-    section_type: section?.type
+    competitor_classes: competitor?.classes || [],
+    section_name: section?.name
   };
 }
 
@@ -321,7 +374,7 @@ export function updateScore(id, data) {
   const numId = parseInt(id);
   const index = db.scores.findIndex(s => s.id === numId);
   if (index === -1) throw new Error('Score not found');
-  
+
   db.scores[index] = {
     ...db.scores[index],
     points: data.points,
@@ -329,7 +382,7 @@ export function updateScore(id, data) {
     updated_at: new Date().toISOString()
   };
   saveDb(db);
-  
+
   const score = db.scores[index];
   const competitor = getCompetitor(score.competitor_id);
   const section = getSection(score.section_id);
@@ -337,10 +390,8 @@ export function updateScore(id, data) {
     ...score,
     competitor_name: competitor?.name,
     competitor_number: competitor?.number,
-    competitor_class: competitor?.primary_class,
-    competitor_enduro: competitor?.enduro_trial,
-    section_name: section?.name,
-    section_type: section?.type
+    competitor_classes: competitor?.classes || [],
+    section_name: section?.name
   };
 }
 
@@ -360,66 +411,41 @@ export function deleteAllData() {
   saveDb(db);
 }
 
-// Leaderboard query
+// --- Leaderboard ---
+
 export function getLeaderboard() {
+  const classes = getClasses();
+  const sections = getSections();
+
   return db.competitors.map(c => {
     const competitorScores = db.scores.filter(s => s.competitor_id === c.id);
-    
-    let mainTotal = 0;
-    let enduroTotal = 0;
-    let mainSectionsDone = 0;
-    let enduroSectionsDone = 0;
-    let mainDnfCount = 0;
-    let enduroDnfCount = 0;
-    let mainLastScoredAt = '';
-    let enduroLastScoredAt = '';
-    
-    competitorScores.forEach(s => {
-      const section = getSection(s.section_id);
-      if (!section) return;
-      
-      // Main and kids sections count toward main total
-      // (kids have separate sections but it's still their "main" competition)
-      if (section.type === 'main' || section.type === 'kids') {
-        mainSectionsDone++;
-        if (s.is_dnf) {
-          mainDnfCount++;
-        }
-        if (s.points !== null) {
-          mainTotal += s.points;
-        }
-        if (s.created_at > mainLastScoredAt) {
-          mainLastScoredAt = s.created_at;
-        }
-      } else if (section.type === 'enduro') {
-        enduroSectionsDone++;
-        if (s.is_dnf) {
-          enduroDnfCount++;
-        }
-        if (s.points !== null) {
-          enduroTotal += s.points;
-        }
-        if (s.created_at > enduroLastScoredAt) {
-          enduroLastScoredAt = s.created_at;
-        }
+    const classTotals = {};
+
+    for (const cls of classes) {
+      if (!(c.classes || []).includes(cls.id)) continue;
+
+      let total = 0;
+      let sectionsDone = 0;
+      let dnfCount = 0;
+      let lastScoredAt = '';
+
+      for (const s of competitorScores) {
+        if (!cls.section_ids.includes(s.section_id)) continue;
+        sectionsDone++;
+        if (s.is_dnf) dnfCount++;
+        if (s.points !== null) total += s.points;
+        if (s.created_at > lastScoredAt) lastScoredAt = s.created_at;
       }
-    });
-    
-    return {
-      ...c,
-      main_total: mainTotal,
-      enduro_total: enduroTotal,
-      main_sections_done: mainSectionsDone,
-      enduro_sections_done: enduroSectionsDone,
-      main_dnf_count: mainDnfCount,
-      enduro_dnf_count: enduroDnfCount,
-      main_last_scored_at: mainLastScoredAt,
-      enduro_last_scored_at: enduroLastScoredAt
-    };
+
+      classTotals[cls.id] = { total, sections_done: sectionsDone, dnf_count: dnfCount, last_scored_at: lastScoredAt };
+    }
+
+    return { ...c, class_totals: classTotals };
   });
 }
 
-// Settings queries
+// --- Settings ---
+
 export function getSettings() {
   return db.settings;
 }
@@ -427,40 +453,54 @@ export function getSettings() {
 export function updateSettings(data) {
   db.settings = {
     ...db.settings,
-    event_name: data.event_name,
-    event_date: data.event_date,
-    email_backup_address: data.email_backup_address,
-    email_backup_enabled: data.email_backup_enabled
+    event_name: data.event_name ?? db.settings.event_name,
+    event_date: data.event_date ?? db.settings.event_date,
   };
+
+  if (data.sections !== undefined) {
+    db.settings.sections = data.sections;
+    const maxId = data.sections.reduce((m, s) => Math.max(m, s.id), 0);
+    db.nextIds.section = maxId + 1;
+  }
+
+  if (data.classes !== undefined) {
+    db.settings.classes = data.classes;
+  }
+
   saveDb(db);
   return db.settings;
 }
 
-// Import data from JSON backup
+// --- Import ---
+
 export function importData({ settings, competitors, scores }) {
-  // Update settings if provided
   if (settings) {
     db.settings = {
       ...db.settings,
       event_name: settings.event_name || db.settings.event_name,
       event_date: settings.event_date || db.settings.event_date,
-      email_backup_address: settings.email_backup_address,
-      email_backup_enabled: settings.email_backup_enabled
     };
+    if (settings.sections) db.settings.sections = settings.sections;
+    if (settings.classes) db.settings.classes = settings.classes;
   }
-  
-  // Replace competitors
+
   if (competitors && Array.isArray(competitors)) {
     db.competitors = competitors;
   }
-  
-  // Replace scores
+
   if (scores && Array.isArray(scores)) {
     db.scores = scores;
   }
-  
+
+  // Recalculate nextIds
+  db.nextIds.competitor = db.competitors.reduce((m, c) => Math.max(m, c.id), 0) + 1;
+  db.nextIds.score = db.scores.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+  if (db.settings.sections) {
+    db.nextIds.section = db.settings.sections.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+  }
+
   saveDb(db);
-  
+
   return {
     competitors: db.competitors.length,
     scores: db.scores.length

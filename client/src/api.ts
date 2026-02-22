@@ -5,8 +5,7 @@ export interface Competitor {
   id: number;
   number: number;
   name: string;
-  primary_class: 'kids' | 'clubman' | 'advanced' | 'enduro-trial';
-  enduro_trial: number;
+  classes: string[];
   photo_url: string | null;
   created_at: string;
 }
@@ -14,8 +13,14 @@ export interface Competitor {
 export interface Section {
   id: number;
   name: string;
-  type: 'main' | 'enduro' | 'kids';
-  section_order: number;
+}
+
+export interface ClassConfig {
+  id: string;
+  name: string;
+  laps: number;
+  section_ids: number[];
+  color: string;
 }
 
 export interface Score {
@@ -30,27 +35,26 @@ export interface Score {
   competitor_name?: string;
   competitor_number?: number;
   section_name?: string;
-  section_type?: string;
   photo_url?: string;
 }
 
+export interface ClassTotal {
+  total: number;
+  sections_done: number;
+  dnf_count: number;
+  last_scored_at: string;
+}
+
 export interface LeaderboardEntry extends Competitor {
-  main_total: number;
-  enduro_total: number;
-  main_sections_done: number;
-  enduro_sections_done: number;
-  main_dnf_count: number;
-  enduro_dnf_count: number;
-  main_last_scored_at: string;
-  enduro_last_scored_at: string;
+  class_totals: Record<string, ClassTotal>;
 }
 
 export interface Settings {
   id: number;
   event_name: string;
   event_date: string | null;
-  email_backup_address: string | null;
-  email_backup_enabled: number;
+  sections: Section[];
+  classes: ClassConfig[];
 }
 
 // Competitors
@@ -169,16 +173,12 @@ export async function deleteScore(id: number): Promise<void> {
 }
 
 export async function deleteAllScores(): Promise<void> {
-  const res = await fetch(`${API_BASE}/scores/all`, {
-    method: 'DELETE'
-  });
+  const res = await fetch(`${API_BASE}/scores/all`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete all scores');
 }
 
 export async function deleteEverything(): Promise<void> {
-  const res = await fetch(`${API_BASE}/scores/everything`, {
-    method: 'DELETE'
-  });
+  const res = await fetch(`${API_BASE}/scores/everything`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete all data');
 }
 

@@ -12,6 +12,7 @@ import {
   deleteAllScores,
   deleteAllData,
   getSections,
+  getClasses,
   getLeaderboard
 } from '../db.js';
 import { broadcastScoreUpdate } from '../socket.js';
@@ -91,12 +92,13 @@ router.post('/', async (req, res) => {
     // Auto-determine lap number
     const lap = getNextLap(competitor_id, section_id);
     
-    if (lap > 3) {
-      return res.status(400).json({ error: 'All 3 laps already scored for this section' });
+    // Dynamic lap limit from class config
+    const lapStatus = canStartNewLap(competitor_id, section_id);
+    const maxLap = lapStatus.maxLap || 3;
+    if (lap > maxLap) {
+      return res.status(400).json({ error: `All ${maxLap} laps already scored for this section` });
     }
     
-    // Check if previous lap is complete at all sections of this type
-    const lapStatus = canStartNewLap(competitor_id, section_id);
     const wouldStartNewLap = lap > lapStatus.currentLap;
     if (wouldStartNewLap && !lapStatus.canScore) {
       const missing = lapStatus.incompleteSections.join(', ');
